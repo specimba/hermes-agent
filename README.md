@@ -1,175 +1,244 @@
-<p align="center">
-  <img src="assets/banner.png" alt="Hermes Agent" width="100%">
-</p>
+# Hermes Multi-Agent Orchestration System
 
-# Hermes Agent ☤
+A comprehensive system for managing and orchestrating multiple AI agents, with robust governance, coordination, monitoring, and continuous improvement features.
 
-<p align="center">
-  <a href="https://hermes-agent.nousresearch.com/docs/"><img src="https://img.shields.io/badge/Docs-hermes--agent.nousresearch.com-FFD700?style=for-the-badge" alt="Documentation"></a>
-  <a href="https://discord.gg/NousResearch"><img src="https://img.shields.io/badge/Discord-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"></a>
-  <a href="https://github.com/NousResearch/hermes-agent/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License: MIT"></a>
-  <a href="https://nousresearch.com"><img src="https://img.shields.io/badge/Built%20by-Nous%20Research-blueviolet?style=for-the-badge" alt="Built by Nous Research"></a>
-</p>
+## Architecture Overview
 
-**The self-improving AI agent built by [Nous Research](https://nousresearch.com).** It's the only agent with a built-in learning loop — it creates skills from experience, improves them during use, nudges itself to persist knowledge, searches its own past conversations, and builds a deepening model of who you are across sessions. Run it on a $5 VPS, a GPU cluster, or serverless infrastructure that costs nearly nothing when idle. It's not tied to your laptop — talk to it from Telegram while it works on a cloud VM.
-
-Use any model you want — [Nous Portal](https://portal.nousresearch.com), [OpenRouter](https://openrouter.ai) (200+ models), [z.ai/GLM](https://z.ai), [Kimi/Moonshot](https://platform.moonshot.ai), [MiniMax](https://www.minimax.io), OpenAI, or your own endpoint. Switch with `hermes model` — no code changes, no lock-in.
-
-<table>
-<tr><td><b>A real terminal interface</b></td><td>Full TUI with multiline editing, slash-command autocomplete, conversation history, interrupt-and-redirect, and streaming tool output.</td></tr>
-<tr><td><b>Lives where you do</b></td><td>Telegram, Discord, Slack, WhatsApp, Signal, and CLI — all from a single gateway process. Voice memo transcription, cross-platform conversation continuity.</td></tr>
-<tr><td><b>A closed learning loop</b></td><td>Agent-curated memory with periodic nudges. Autonomous skill creation after complex tasks. Skills self-improve during use. FTS5 session search with LLM summarization for cross-session recall. <a href="https://github.com/plastic-labs/honcho">Honcho</a> dialectic user modeling. Compatible with the <a href="https://agentskills.io">agentskills.io</a> open standard.</td></tr>
-<tr><td><b>Scheduled automations</b></td><td>Built-in cron scheduler with delivery to any platform. Daily reports, nightly backups, weekly audits — all in natural language, running unattended.</td></tr>
-<tr><td><b>Delegates and parallelizes</b></td><td>Spawn isolated subagents for parallel workstreams. Write Python scripts that call tools via RPC, collapsing multi-step pipelines into zero-context-cost turns.</td></tr>
-<tr><td><b>Runs anywhere, not just your laptop</b></td><td>Six terminal backends — local, Docker, SSH, Daytona, Singularity, and Modal. Daytona and Modal offer serverless persistence — your agent's environment hibernates when idle and wakes on demand, costing nearly nothing between sessions. Run it on a $5 VPS or a GPU cluster.</td></tr>
-<tr><td><b>Research-ready</b></td><td>Batch trajectory generation, Atropos RL environments, trajectory compression for training the next generation of tool-calling models.</td></tr>
-</table>
-
----
-
-## Quick Install
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/NousResearch/hermes-agent/main/scripts/install.sh | bash
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    HERMES ORCHESTRATION SYSTEM                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐          │
+│  │ Orchestrator │  │  Governance  │  │ Coordinator  │          │
+│  │   (Core)     │  │   Engine     │  │  (Workflow)  │          │
+│  │              │  │              │  │              │          │
+│  │ - Agent Mgmt │  │ - Policies   │  │ - DAG Flow   │          │
+│  │ - Task Queue │  │ - Security   │  │ - Messaging  │          │
+│  │ - Load Bal.  │  │ - Audit Log  │  │ - Events     │          │
+│  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘          │
+│         │                 │                 │                   │
+│         └─────────────────┼─────────────────┘                   │
+│                           │                                     │
+│                  ┌────────▼────────┐                            │
+│                  │ Feedback Engine │                            │
+│                  │                 │                            │
+│                  │ - Analytics     │                            │
+│                  │ - Insights      │                            │
+│                  │ - Optimization  │                            │
+│                  └────────┬────────┘                            │
+│                           │                                     │
+│         ┌─────────────────┼─────────────────┐                   │
+│         │                 │                 │                   │
+│  ┌──────▼───────┐  ┌──────▼───────┐  ┌──────▼───────┐          │
+│  │   Agent 1    │  │   Agent 2    │  │   Agent N    │          │
+│  │  (AI Model)  │  │  (AI Model)  │  │  (AI Model)  │          │
+│  └──────────────┘  └──────────────┘  └──────────────┘          │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                     ┌────────▼────────┐
+                     │   Dashboard     │
+                     │   (Web UI)      │
+                     │  Port: 8080     │
+                     └─────────────────┘
 ```
 
-Works on Linux, macOS, and WSL2. The installer handles everything — Python, Node.js, dependencies, and the `hermes` command. No prerequisites except git.
+## Components
 
-> **Windows:** Native Windows is not supported. Please install [WSL2](https://learn.microsoft.com/en-us/windows/wsl/install) and run the command above.
+### 1. Agent Orchestrator (`orchestrator_system/orchestrator/`)
+- **AgentOrchestrator**: Central coordinator for agent lifecycle and task delegation
+- **AgentRegistry**: Manages registered agent instances
+- **TaskManager**: Handles task queue, priorities, and execution tracking
+- **ResourceAllocator**: Allocates resources to agents and tasks
 
-After installation:
+**Features:**
+- Dynamic agent creation and destruction
+- Intelligent task delegation with load balancing
+- Auto-scaling based on demand
+- Real-time performance monitoring
 
-```bash
-source ~/.bashrc    # reload shell (or: source ~/.zshrc)
-hermes              # start chatting!
-```
+### 2. Governance Engine (`orchestrator_system/governance/`)
+- **GovernanceEngine**: Central policy enforcement and compliance
+- **PolicyEngine**: Evaluates policies against requests
+- **SecurityManager**: Authentication, authorization, threat detection
+- **AuditLogger**: Comprehensive audit trail logging
 
----
+**Features:**
+- Policy-based access control
+- Rate limiting and throttling
+- Sensitive data protection
+- Complete audit trail for compliance
 
-## Getting Started
+### 3. Workflow Coordinator (`orchestrator_system/coordinator/`)
+- **WorkflowCoordinator**: Manages complex multi-agent workflows
+- **WorkflowEngine**: Executes workflow tasks with dependency resolution
+- **MessageBus**: Pub/sub communication between agents
 
-```bash
-hermes              # Interactive CLI — start a conversation
-hermes model        # Choose your LLM provider and model
-hermes tools        # Configure which tools are enabled
-hermes config set   # Set individual config values
-hermes gateway      # Start the messaging gateway (Telegram, Discord, etc.)
-hermes setup        # Run the full setup wizard (configures everything at once)
-hermes claw migrate # Migrate from OpenClaw (if coming from OpenClaw)
-hermes update       # Update to the latest version
-hermes doctor       # Diagnose any issues
-```
+**Features:**
+- Sequential, parallel, and DAG workflows
+- Inter-agent messaging
+- Task dependency management
+- Workflow pause/resume/cancel
 
-📖 **[Full documentation →](https://hermes-agent.nousresearch.com/docs/)**
+### 4. Feedback Engine (`orchestrator_system/feedback/`)
+- **FeedbackEngine**: Continuous improvement through analytics
+- **PerformanceAnalyzer**: Analyzes agent performance patterns
+- **AgentLearner**: Generates insights and optimization suggestions
 
-## CLI vs Messaging Quick Reference
+**Features:**
+- Real-time performance tracking
+- Pattern recognition and anomaly detection
+- Automated improvement suggestions
+- Historical trend analysis
 
-Hermes has two entry points: start the terminal UI with `hermes`, or run the gateway and talk to it from Telegram, Discord, Slack, WhatsApp, Signal, or Email. Once you're in a conversation, many slash commands are shared across both interfaces.
+### 5. Dashboard (`orchestrator_system/dashboard/`)
+- **DashboardServer**: Web-based monitoring interface
+- **DashboardAPI**: REST API for programmatic access
 
-| Action | CLI | Messaging platforms |
-|---------|-----|---------------------|
-| Start chatting | `hermes` | Run `hermes gateway setup` + `hermes gateway start`, then send the bot a message |
-| Start fresh conversation | `/new` or `/reset` | `/new` or `/reset` |
-| Change model | `/model [provider:model]` | `/model [provider:model]` |
-| Set a personality | `/personality [name]` | `/personality [name]` |
-| Retry or undo the last turn | `/retry`, `/undo` | `/retry`, `/undo` |
-| Compress context / check usage | `/compress`, `/usage`, `/insights [--days N]` | `/compress`, `/usage`, `/insights [days]` |
-| Browse skills | `/skills` or `/<skill-name>` | `/skills` or `/<skill-name>` |
-| Interrupt current work | `Ctrl+C` or send a new message | `/stop` or send a new message |
-| Platform-specific status | `/platforms` | `/status`, `/sethome` |
+**Features:**
+- Real-time system overview
+- Agent status and metrics
+- Task monitoring
+- Audit log viewer
+- Compliance reports
 
-For the full command lists, see the [CLI guide](https://hermes-agent.nousresearch.com/docs/user-guide/cli) and the [Messaging Gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/messaging).
+## Quick Start
 
----
-
-## Documentation
-
-All documentation lives at **[hermes-agent.nousresearch.com/docs](https://hermes-agent.nousresearch.com/docs/)**:
-
-| Section | What's Covered |
-|---------|---------------|
-| [Quickstart](https://hermes-agent.nousresearch.com/docs/getting-started/quickstart) | Install → setup → first conversation in 2 minutes |
-| [CLI Usage](https://hermes-agent.nousresearch.com/docs/user-guide/cli) | Commands, keybindings, personalities, sessions |
-| [Configuration](https://hermes-agent.nousresearch.com/docs/user-guide/configuration) | Config file, providers, models, all options |
-| [Messaging Gateway](https://hermes-agent.nousresearch.com/docs/user-guide/messaging) | Telegram, Discord, Slack, WhatsApp, Signal, Home Assistant |
-| [Security](https://hermes-agent.nousresearch.com/docs/user-guide/security) | Command approval, DM pairing, container isolation |
-| [Tools & Toolsets](https://hermes-agent.nousresearch.com/docs/user-guide/features/tools) | 40+ tools, toolset system, terminal backends |
-| [Skills System](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills) | Procedural memory, Skills Hub, creating skills |
-| [Memory](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory) | Persistent memory, user profiles, best practices |
-| [MCP Integration](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp) | Connect any MCP server for extended capabilities |
-| [Cron Scheduling](https://hermes-agent.nousresearch.com/docs/user-guide/features/cron) | Scheduled tasks with platform delivery |
-| [Context Files](https://hermes-agent.nousresearch.com/docs/user-guide/features/context-files) | Project context that shapes every conversation |
-| [Architecture](https://hermes-agent.nousresearch.com/docs/developer-guide/architecture) | Project structure, agent loop, key classes |
-| [Contributing](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) | Development setup, PR process, code style |
-| [CLI Reference](https://hermes-agent.nousresearch.com/docs/reference/cli-commands) | All commands and flags |
-| [Environment Variables](https://hermes-agent.nousresearch.com/docs/reference/environment-variables) | Complete env var reference |
-
----
-
-## Migrating from OpenClaw
-
-If you're coming from OpenClaw, Hermes can automatically import your settings, memories, skills, and API keys.
-
-**During first-time setup:** The setup wizard (`hermes setup`) automatically detects `~/.openclaw` and offers to migrate before configuration begins.
-
-**Anytime after install:**
+### Installation
 
 ```bash
-hermes claw migrate              # Interactive migration (full preset)
-hermes claw migrate --dry-run    # Preview what would be migrated
-hermes claw migrate --preset user-data   # Migrate without secrets
-hermes claw migrate --overwrite  # Overwrite existing conflicts
+cd /workspace
+pip install -r requirements.txt  # If you have dependencies
 ```
 
-What gets imported:
-- **SOUL.md** — persona file
-- **Memories** — MEMORY.md and USER.md entries
-- **Skills** — user-created skills → `~/.hermes/skills/openclaw-imports/`
-- **Command allowlist** — approval patterns
-- **Messaging settings** — platform configs, allowed users, working directory
-- **API keys** — allowlisted secrets (Telegram, OpenRouter, OpenAI, Anthropic, ElevenLabs)
-- **TTS assets** — workspace audio files
-- **Workspace instructions** — AGENTS.md (with `--workspace-target`)
-
-See `hermes claw migrate --help` for all options, or use the `openclaw-migration` skill for an interactive agent-guided migration with dry-run previews.
-
----
-
-## Contributing
-
-We welcome contributions! See the [Contributing Guide](https://hermes-agent.nousresearch.com/docs/developer-guide/contributing) for development setup, code style, and PR process.
-
-Quick start for contributors:
+### Running the System
 
 ```bash
-git clone https://github.com/NousResearch/hermes-agent.git
-cd hermes-agent
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv venv venv --python 3.11
-source venv/bin/activate
-uv pip install -e ".[all,dev]"
-python -m pytest tests/ -q
+# Start the full orchestration system
+python run_orchestrator.py --port 8080
+
+# Or start without dashboard
+python run_orchestrator.py --no-dashboard
 ```
 
-> **RL Training (optional):** To work on the RL/Tinker-Atropos integration:
-> ```bash
-> git submodule update --init tinker-atropos
-> uv pip install -e "./tinker-atropos"
-> ```
+### Access Dashboard
 
----
+Open your browser to: `http://localhost:8080`
 
-## Community
+### Programmatic Usage
 
-- 💬 [Discord](https://discord.gg/NousResearch)
-- 📚 [Skills Hub](https://agentskills.io)
-- 🐛 [Issues](https://github.com/NousResearch/hermes-agent/issues)
-- 💡 [Discussions](https://github.com/NousResearch/hermes-agent/discussions)
+```python
+from orchestrator_system import (
+    AgentOrchestrator,
+    GovernanceEngine, 
+    WorkflowCoordinator,
+    FeedbackEngine,
+    DashboardServer
+)
 
----
+# Initialize components
+orchestrator = AgentOrchestrator()
+governance = GovernanceEngine()
+coordinator = WorkflowCoordinator(orchestrator)
+feedback = FeedbackEngine()
+
+# Connect components
+orchestrator.set_governance_engine(governance)
+orchestrator.set_workflow_coordinator(coordinator)
+orchestrator.set_feedback_engine(feedback)
+
+# Start services
+orchestrator.start()
+feedback.start()
+
+# Create agents
+agent1 = orchestrator.create_agent()
+agent2 = orchestrator.create_agent()
+
+# Delegate tasks
+task = orchestrator.delegate_task(
+    description="Analyze project structure",
+    priority="high"
+)
+
+# Start dashboard
+dashboard = DashboardServer(
+    port=8080,
+    orchestrator=orchestrator,
+    governance=governance,
+    coordinator=coordinator
+)
+dashboard.start()
+
+print(f"Dashboard available at {dashboard.get_url()}")
+```
+
+## API Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/overview` | GET | System overview |
+| `/api/agents` | GET | List all agents |
+| `/api/agents/{id}` | GET | Agent details |
+| `/api/agents` | POST | Create agent |
+| `/api/tasks` | GET | List all tasks |
+| `/api/tasks` | POST | Create task |
+| `/api/tasks/{id}/cancel` | POST | Cancel task |
+| `/api/workflows` | GET | List workflows |
+| `/api/metrics` | GET | System metrics |
+| `/api/audit` | GET | Audit events |
+| `/api/compliance` | GET | Compliance report |
+
+## Configuration
+
+Create a `config.json` file:
+
+```json
+{
+  "max_agents": 10,
+  "default_model": "anthropic/claude-opus-4.6",
+  "default_toolsets": ["terminal", "file", "web"],
+  "enable_auto_scaling": true,
+  "min_idle_agents": 2,
+  "max_idle_agents": 5,
+  "enable_policy_enforcement": true,
+  "enable_audit_logging": true,
+  "max_api_calls_per_minute": 60
+}
+```
+
+Run with config:
+```bash
+python run_orchestrator.py --config config.json
+```
+
+## File Structure
+
+```
+/workspace/
+├── orchestrator_system/
+│   ├── __init__.py
+│   ├── orchestrator/
+│   │   ├── __init__.py
+│   │   └── core.py
+│   ├── governance/
+│   │   ├── __init__.py
+│   │   └── core.py
+│   ├── coordinator/
+│   │   ├── __init__.py
+│   │   └── core.py
+│   ├── feedback/
+│   │   ├── __init__.py
+│   │   └── loop.py
+│   └── dashboard/
+│       ├── __init__.py
+│       └── server.py
+├── run_orchestrator.py
+├── README.md
+└── requirements.txt
+```
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
-
-Built by [Nous Research](https://nousresearch.com).
+MIT License
