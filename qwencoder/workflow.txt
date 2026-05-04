@@ -1,0 +1,234 @@
+"""Graph-based workflow engine.
+
+Inspired by agent-framework's graph-based orchestration and nexusalpha's
+Swarm layer (Foreman → Worker → Task → Bid).
+
+Key concepts:
+- WorkflowNode: A unit of work (agent call, function, or checkpoint)
+- WorkflowEdge: Data flow connection between nodes
+- Workflow: A DAG of nodes and edges
+- WorkflowEngine: Executes workflows with checkpointing and human-in-the-loop
+
+From agent-framework: DAG topology, streaming, checkpointing, time-travel
+From nexusalpha Swarm: P2b auction allocation, Foreman coordination
+From hermes-agent: delegate_tool sub-agent spawning pattern
+"""
+
+from __future__ import annotations
+
+import time
+import uuid
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Callable, Optional
+
+
+class WorkflowState(Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    PAUSED = "paused"          # Human-in-the-loop checkpoint
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class NodeType(Enum):
+    AGENT = "agent"            # LLM agent call (hermes-agent AIAgent)
+    FUNCTION = "function"      # Deterministic function (agent-framework)
+    CHECKPOINT = "checkpoint"  # Human-in-the-loop pause point
+    FORK = "fork"              # Parallel branch (Swarm Foreman pattern)
+    JOIN = "join"              # Merge parallel branches
+
+
+@dataclass
+class WorkflowNode:
+    id: str
+    name: str
+    node_type: NodeType
+    handler: Optional[Callable] = None
+    config: dict[str, Any] = field(default_factory=dict)
+    state: WorkflowState = WorkflowState.PENDING
+    result: Optional[Any] = None
+    error: Optional[str] = None
+    started_at: Optional[float] = None
+    completed_at: Optional[float] = None
+
+    @property
+    def duration_ms(self) -> Optional[float]:
+        if self.started_at and self.completed_at:
+            return round((self.completed_at - self.started_at) * 1000, 2)
+        return None
+
+
+@dataclass
+class WorkflowEdge:
+    source_id: str
+    target_id: str
+    data_key: Optional[str] = None  # Key to pass from source result to target input
+
+
+@dataclass
+class Checkpoint:
+    """State snapshot for time-travel (agent-framework pattern)."""
+    workflow_id: str
+    node_id: str
+    timestamp: float
+    node_states: dict[str, WorkflowState] = field(default_factory=dict)
+    node_results: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class Workflow:
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    nodes: dict[str, WorkflowNode] = field(default_factory=dict)
+    edges: list[WorkflowEdge] = field(default_factory=list)
+    state: WorkflowState = WorkflowState.PENDING
+    checkpoints: list[Checkpoint] = field(default_factory=list)
+    _execution_context: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    def add_node(self, node: WorkflowNode) -> None:
+        self.nodes[node.id] = node
+
+    def add_edge(self, source_id: str, target_id: str, data_key: Optional[str] = None) -> None:
+        self.edges.append(WorkflowEdge(source_id, target_id, data_key))
+
+    def get_dependencies(self, node_id: str) -> list[str]:
+        return [e.source_id for e in self.edges if e.target_id == node_id]
+
+    def get_dependents(self, node_id: str) -> list[str]:
+        return [e.target_id for e in self.edges if e.source_id == node_id]
+
+    def get_ready_nodes(self) -> list[WorkflowNode]:
+        """Nodes whose dependencies are all completed (DAG scheduling)."""
+        ready = []
+        for node in self.nodes.values():
+            if node.state != WorkflowState.PENDING:
+                continue
+            deps = self.get_dependencies(node.id)
+            if all(d in self.nodes and self.nodes[d].state == WorkflowState.COMPLETED for d in deps):
+                ready.append(node)
+        return ready
+
+    def save_checkpoint(self) -> Checkpoint:
+        cp = Checkpoint(
+            workflow_id=self.id,
+            node_id="",
+            timestamp=time.time(),
+            node_states={nid: n.state for nid, n in self.nodes.items()},
+            node_results={nid: n.result for nid, n in self.nodes.items() if n.result is not None},
+        )
+        self.checkpoints.append(cp)
+        return cp
+
+    def restore_checkpoint(self, index: int = -1) -> None:
+        """Time-travel: restore workflow to a previous checkpoint."""
+        if not self.checkpoints:
+            return
+        cp = self.checkpoints[index]
+        for nid, state in cp.node_states.items():
+            if nid in self.nodes:
+                self.nodes[nid].state = state
+                self.nodes[nid].result = cp.node_results.get(nid)
+                if state == WorkflowState.PENDING:
+                    self.nodes[nid].started_at = None
+                    self.nodes[nid].completed_at = None
+                    self.nodes[nid].error = None
+        # Recompute workflow-level state from restored nodes
+        states = {n.state for n in self.nodes.values()}
+        if all(s == WorkflowState.PENDING for s in states):
+            self.state = WorkflowState.PENDING
+        elif WorkflowState.FAILED in states or WorkflowState.CANCELLED in states:
+            self.state = WorkflowState.FAILED
+        elif WorkflowState.PAUSED in states:
+            self.state = WorkflowState.PAUSED
+        elif any(s in (WorkflowState.RUNNING, WorkflowState.PENDING) for s in states):
+            self.state = WorkflowState.RUNNING
+        else:
+            self.state = WorkflowState.COMPLETED
+
+
+class WorkflowEngine:
+    """Executes workflows with DAG scheduling, checkpointing, and HITL.
+
+    Execution model:
+    1. Find all ready nodes (dependencies completed)
+    2. Execute them sequentially
+    3. On CHECKPOINT nodes, pause and wait for human approval
+    4. Save checkpoint after each step for time-travel support
+    5. Continue until all nodes completed or failure
+    """
+
+    def __init__(self) -> None:
+        self._workflows: dict[str, Workflow] = {}
+
+    def create_workflow(self, name: str = "") -> Workflow:
+        wf = Workflow(name=name)
+        self._workflows[wf.id] = wf
+        return wf
+
+    def execute(self, workflow: Workflow, context: Optional[dict] = None) -> Workflow:
+        """Run workflow to completion (synchronous)."""
+        workflow.state = WorkflowState.RUNNING
+        context = context or {}
+        workflow._execution_context = context
+
+        while True:
+            ready = workflow.get_ready_nodes()
+            if not ready:
+                break
+
+            for node in ready:
+                if node.node_type == NodeType.CHECKPOINT:
+                    node.state = WorkflowState.PAUSED
+                    workflow.state = WorkflowState.PAUSED
+                    workflow.save_checkpoint()
+                    return workflow
+
+                node.state = WorkflowState.RUNNING
+                node.started_at = time.monotonic()
+
+                try:
+                    if node.handler:
+                        deps_data = {}
+                        for edge in workflow.edges:
+                            if edge.target_id == node.id and edge.source_id in workflow.nodes:
+                                src = workflow.nodes[edge.source_id]
+                                if src.result is not None:
+                                    key = edge.data_key or edge.source_id
+                                    deps_data[key] = src.result
+                        node.result = node.handler({**context, **deps_data, **node.config})
+                    node.state = WorkflowState.COMPLETED
+                except Exception as e:
+                    node.error = str(e)
+                    node.state = WorkflowState.FAILED
+                    workflow.state = WorkflowState.FAILED
+                    return workflow
+                finally:
+                    node.completed_at = time.monotonic()
+
+            workflow.save_checkpoint()
+
+        all_completed = all(n.state == WorkflowState.COMPLETED for n in workflow.nodes.values())
+        workflow.state = WorkflowState.COMPLETED if all_completed else WorkflowState.FAILED
+        return workflow
+
+    def resume(self, workflow: Workflow, approval: bool = True) -> Workflow:
+        """Resume a paused workflow after human-in-the-loop checkpoint."""
+        if workflow.state != WorkflowState.PAUSED:
+            return workflow
+
+        if not approval:
+            workflow.state = WorkflowState.CANCELLED
+            return workflow
+
+        for node in workflow.nodes.values():
+            if node.state == WorkflowState.PAUSED:
+                node.state = WorkflowState.COMPLETED
+                node.result = {"approved": True}
+
+        workflow.state = WorkflowState.RUNNING
+        return self.execute(workflow, context=workflow._execution_context)
+
+    def get_workflow(self, workflow_id: str) -> Optional[Workflow]:
+        return self._workflows.get(workflow_id)

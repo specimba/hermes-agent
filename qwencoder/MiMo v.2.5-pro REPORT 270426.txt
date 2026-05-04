@@ -1,0 +1,770 @@
+MiMo v.2.5-pro REPORT 270426
+
+"
+# NEXUS OS — Consolidated Status Report (Update)
+
+**Generated**: 2026-04-28
+**Sources Integrated**: 8 documents — Log 003 Distilled Report (1.5MB, 44,781 lines), Log 003 Chunks 00–03, Log 002 Distilled Report (982KB, 23K lines), Agent Briefing Handbook, Project Overview v2
+**Period Covered**: 2026-04-23 → 2026-04-27
+**Status**: Phase 0 grounding | m3-hardened tag | **631 tests passing**
+
+---
+
+## 1. Executive Summary
+
+This report synthesizes all available source material into a single operational picture of NEXUS OS as of April 28, 2026. The project has undergone its most intensive build phase yet: a 13-agent team system was defined, joker agents were deployed to Azure Foundry, governance protocols were established, and several hard lessons were learned about verification, claims discipline, and infrastructure reliability.
+
+**Key Metrics at a Glance**:
+
+| Metric | Value |
+|--------|-------|
+| Tests passing | 631 (624 baseline + 7 task contract tests) |
+| Modules in `src/nexus_os/` | 68 |
+| Azure credit | $700 secured, $29.58 spent ($0.13/day avg) |
+| Foundry agents | 5 (cleaned from 12+) |
+| Model deployments | 8 (cleaned from 17) |
+| A2A protocol status | BROKEN — 8+ attempts, all failed |
+| Canonical branch | `canonical-617` (Zo) / `main-617baseline` (GitHub) |
+| OPUSman version | v6.3 with TokenGuard |
+| Team size | 13 agents defined, final 4-agent swarm identified |
+
+The single most important discovery of this session: **Grok's outputs require CODEX's audits before acceptance.** CODEX caught false test-count claims (635+ vs. actual 622), a ROOT logic bug in the cold starter pack, and dead-code Vault integration in OPUSman. This quality-gate pattern — Grok produces, CODEX audits, SPECI approves or corrects — is now the operational standard.
+
+---
+
+## 2. Architecture & Technical Decisions
+
+### 2.1 Three-Layer Deployment Architecture
+
+The system is built on a deliberate three-layer separation:
+
+```
+┌─────────────────────────────────────────────────┐
+│  Layer 3: AI Gateway / APIM (Enterprise Shell)  │
+│  Quotas, rate limits, observability, caching    │
+├─────────────────────────────────────────────────┤
+│  Layer 2: Azure Foundry (Temporary Accelerator) │
+│  Cloud models, tool ecosystem, telemetry        │
+│  "Use while free, extract patterns, move on"    │
+├─────────────────────────────────────────────────┤
+│  Layer 1: Nexus 7352 (Permanent Brain)          │
+│  Governance, trust, audit, task, policy          │
+│  Python/FastAPI — canonical source of truth      │
+└─────────────────────────────────────────────────┘
+```
+
+Foundry is explicitly temporary. As CODEX stated: *"The plan should be less 'deploy into Azure' and more 'use Foundry as a temporary leverage layer while Nexus becomes self-sufficient. Every useful pattern learned there gets translated into repo-owned files, contracts, and dashboards. Nothing critical should exist only in portal prompts."*
+
+### 2.2 Canonical Port Map (Enforced)
+
+| Port | Role | Status |
+|------|------|--------|
+| 7352 | Governance API (PRIMARY) | Canonical write-path control plane |
+| 7353 | TWAVE wrapper | Read-only |
+| 7354 | Mock/fallback | Dev only |
+| 7355 | OPUSman joker wrapper | Isolated HTTP service |
+| 7356 | Grok joker wrapper | Isolated HTTP service |
+| 3000 | Dashboard dev | Frontend |
+| 3003 | WebSocket simulation | Dev |
+| 11434 | Ollama | Internal only, never expose |
+
+Central port registry created as `nexus_os/config/ports.py` using IntEnum. Port 7352 is the single most reaffirmed decision in the project — repeated across multiple agents and reports. As Grok 4.3 put it: *"7352 becomes the mandatory write-path control plane. Every agent action emits packets: task.claim, task.heartbeat, task.result, proposal.submit, handoff.request, audit.append."*
+
+### 2.3 Core Pipeline
+
+```
+BRIDGE (JSON-RPC) → VAULT (S-P-E-W) → ENGINE (Hermes) → GOVERNOR (KAIJU/VAP)
+```
+
+Five pillars with distinct responsibilities:
+
+| Pillar | Responsibility | Key Subsystems |
+|--------|---------------|----------------|
+| **Bridge** | A2A transport, HMAC auth, Token Headers | Connection management |
+| **Governor** | KAIJU auth, compliance, trust gates | GovernorSkillGate, proposal flow |
+| **Vault** | 5-track memory, encryption | SuperLocalMemory (S-Layer), VaultManager |
+| **Engine** | DAG routing, Hermes intent classification | GMR (Genius Model Rotator), dual-pool routing |
+| **Monitoring** | TokenGuard, VAP audit trail | Token budgets, SHA-256 cryptographic audit |
+
+### 2.4 Joker Agent Architecture
+
+Each joker agent runs as an **isolated HTTP wrapper service** with its own pinned environment — not direct Python imports. As CODEX advised: *"Do not import frontier SDKs directly inside every agent process. Run each joker agent as an isolated runtime wrapper service with its own pinned environment."*
+
+| Service | Port | Model | Purpose |
+|---------|------|-------|---------|
+| `joker_opus_service` | 7355 | Claude Opus 4.7 | Token-efficient coding, temp 0.3 |
+| `joker_grok_service` | 7356 | grok-4-20-non-reasoning | Fast synthesis, temp 0.7 |
+
+Each exposes: `/health`, `/invoke`, `/.well-known/agent-card.json`
+
+The Joker Grok Agent (`joker_grok_agent.py`, commit 82b249a) avoids openai import at module import time, lazy-loads the provider on first real invoke, and reports heartbeat/result back to port 7352.
+
+### 2.5 Core Technical Components
+
+| Component | Purpose | Status |
+|-----------|---------|--------|
+| **TokenGuard** | Budget enforcement with `can_spend()` pre-flight check | Integrated in OPUSman v6.3 |
+| **VAP Chain** | SHA-256 immutable audit trail (L1+L2) | Active |
+| **GMR Engine** | Dual-pool model routing (FAST/PREMIUM) | Active |
+| **Trust Scorer v2.1** | Lane-scoped, non-compensatory, tanh-composed | Active |
+| **Vault/5-Track** | Memory: event, trust, capability, failure_pattern, governance | Canonical (NOT Mem0) |
+| **SuperLocalMemory** | S-Layer for OPUSman | Integrated |
+| **Task Reconciler** | Automated folder/status drift detection + versioned rollback | Created |
+| **Agent Registry** | `agent_registry.yaml` mapping local→Foundry names | Created |
+| **Public Share Gate** | `PUBLIC_SHARE_ALLOWLIST.toml` + `public_share_check.py` | Created |
+| **Model Arena v2.0** | Head-to-head model comparison (round-robin + best-of-3/5) | Created |
+| **Local Benchmark v2.0** | Weighted scoring for Ollama models | Created |
+
+### 2.6 TokenGuard Integration
+
+CODEX patched OPUSman v6.3 to inject the pre-flight check inside the `delegate()` method before any API requests. It calculates estimated cost dynamically (compressed prompt tokens + max output tokens for the specific domain). If `token_guard.can_spend()` returns false, the agent short-circuits and returns a clean 429 Deny result.
+
+### 2.7 Trust Scoring v2.1 Formula
+
+This is original math from SPECI's ideas, not borrowed:
+
+```
+Qeff = max(0, (Q - qmin)/(1 - qmin)) * (1 - exp(-n/n0))
+P = α·U + γ·D+ - β·R - η·D-
+raw_score = tanh(κ · Qeff^δ · P)
+```
+
+Seven hard invariants:
+- INV1: blocked/unassigned → score=None, finding=NONE
+- INV2: hard_fail OR R>Rcrit → score=-1.0, finding=ESCALATED
+- INV3: score ∈ [-1.0, 1.0] (asserted, not clamped)
+- INV4: finding_state tracked
+- INV5: R>Rcrit → held (COMPLIANCE/AUDIT) or escalated (others)
+- INV6: Qeff bounded by q_gated and exp decay
+- INV7: ε-gate: |raw|<ε → score=0.0
+
+Post-processing: logistic scaling (0–1 via sigmoid) followed by temporal decay (rate=0.05).
+
+Lane parameters vary by domain — research has Rcrit=0.8, qmin=0.3, n0=5; audit_sec has Rcrit=0.4, qmin=0.7, n0=2; compliance has Rcrit=0.2, qmin=0.8, n0=1.
+
+### 2.8 OPUSman Evolution
+
+| Version | Key Changes |
+|---------|------------|
+| v6.0 | 79% efficiency, standalone, hardcoded API key |
+| v6.1 | Key removed, smart fallback to Ollama (`qwen2.5-coder:7b`), basic health monitoring |
+| v6.2 | Full NEXUS integration (VAP chain, degradation detection, Vault/5-track memory), `NEXUS_AVAILABLE` flag |
+| v6.3 | TokenGuard budget-first enforcement, `can_spend()` pre-flight check |
+
+Health formula: `min(100.0, 78.0 + (tokens_saved / divisor))`. Degradation detection uses 5+ health samples for rolling average; "medium" risk if avg < 72, "high" if avg < 65.
+
+### 2.9 Model Arena v2.0
+
+Head-to-head model comparison system with `ModelArena` class using round-robin + best-of-3/5 logic. Composite score: `accuracy * 0.6 + latency_factor * 0.4`. Three points per win, tracked in a leaderboard. Two integration paths: Ollama (local) and OpenRouter (cloud). Output: `arena_results.jsonl`.
+
+### 2.10 Local Model Benchmarking v2.0
+
+Weighted scoring system for local Ollama models:
+
+| Category | Weight | Evaluation |
+|----------|--------|-----------|
+| Governance | 0.30 | Skill proposal evaluation, risk assessment |
+| Memory | 0.20 | Fact retention and recall |
+| Safety | 0.20 | Harmful request refusal |
+| Reasoning | 0.15 | System design understanding |
+| Efficiency | 0.15 | Code quality, error handling |
+
+Scoring: base 70.0 + category bonuses (keyword matching) − short answer penalty (−15 for <80 chars), clamped 40.0–100.0.
+
+### 2.11 Governance-Security-Orchestrator (Foundry Agent)
+
+Third Foundry agent using `model-router`. Decision framework: *"Deny by default, permit only with explicit policy approval."* Constraint: advisory first, enforcement later — must benchmark before giving enforcement power.
+
+### 2.12 Dashboard Fusion Strategy
+
+GLM5 (5 tabs) and GLM5.1 (8+1 tabs) evolve in parallel under one backend contract:
+- `prototypes/glm5/` and `prototypes/glm51/` — parallel lanes
+- `docs/dashboard/API_CONTRACT.md` — single backend contract
+- `docs/dashboard/FUSION_MATRIX.md` — slice-based scoring across 8 dimensions
+
+As SPECI noted: *"We not yet in dashboard merge phase. Be calm."* And CODEX: *"Keep both prototypes alive. Force both to consume one backend contract from 7352. Fuse proven pieces, not whole codebases."*
+
+### 2.13 Public/Private Share Governance
+
+Labels: `public-safe`, `internal-only`, `private-research`, `secret-blocked`. Files created (commit 82b249a): `PUBLIC_SHARE_ALLOWLIST.toml` and `scripts/public_share_check.py`. As CODEX stated: *".gitignore is necessary, but not sufficient. You need a public-share gate, not just ignore rules."*
+
+### 2.14 New Modules Created (Session 003)
+
+| Module | Purpose |
+|--------|---------|
+| `agent_registry.yaml` | Canonical agent identity registry (v1.0.0) |
+| `PUBLIC_SHARE_ALLOWLIST.toml` | Public/private boundary governance |
+| `scripts/public_share_check.py` | Pre-push validation |
+| `task_reconciler.py` | Task ledger drift detection + versioned rollback |
+| `joker_grok_agent.py` | Grok wrapper with lazy-loading, health/invoke endpoints |
+| `nexus_os/config/ports.py` | Central port registry (IntEnum) |
+| `nexus-foundry-tools.yaml` | OpenAPI spec for Foundry tool integration |
+| `nexus_os/api/service.py` | Task contract endpoints on 7352 |
+| `nexus_os/api/server.py` | FastAPI surface with route plane endpoints |
+| `scripts/nexus_scan.py` (optimized) | os.walk loop skipping .git, __pycache__, dot-dirs |
+| `modelscope_studio_upload/` | Public-safe ModelScope bundle |
+| `docs/dashboard/GLM_FUSION_INTAKE_CHECKLIST.md` | GLM fusion handoff spec |
+
+Research documents produced: `HERMES_V2026_4_23_NEXUS_ADAPTATION.md`, `FOUNDRY_HERMES_OPENSHELL_COMBINED_PLAN.md`, `EXTENSIVE_STATUS_COVERAGE_REPORT_2026-04-24.md`.
+
+### 2.15 Key Technical Insights
+
+1. **Windows asyncio/Winsock failure** is an environment-class problem, not agent-specific. If one agent hits it, others likely will too. CODEX recommended: *"If Windows keeps failing, move those wrappers to WSL2 or a container, while Nexus core remains local Windows Python."*
+
+2. **Token audit bloat** (~24K/cycle) needs compaction: rolling compact state file, heartbeat packets under 300 tokens, no raw log pastes after first ingestion, compaction every 3–5 turns.
+
+3. **"Vault" terminology** caused AI to hallucinate DeFi financial language. System prompt fixed in `/api/chat/route.ts` and `/api/claude/route.ts`.
+
+4. **Tool schema overhead**: 4,000–7,000 tokens per call even without using tools. Selective single-tool usage yields 44.6% savings.
+
+5. **Radix ScrollArea bug**: `min-h-0` is the critical fix for flex children not shrinking below content size.
+
+6. **Kiro file watcher**: 12 processes consuming 2.5GB RAM and 350+ CPU seconds. Phantom file changes with no actual modifications. Issue #4826.
+
+7. **Copy-paste bottleneck**: Human can only communicate 1-by-1 with agents. Solution: A2A for agent-to-agent, MCP for tools, durable workflow layer for retries.
+
+8. **Test count discrepancy**: Multiple development branches with inconsistent merges. Solution: `TEST_MANIFEST.json` as single source of truth.
+
+### 2.16 Design Trade-offs
+
+| Decision | Rationale |
+|----------|-----------|
+| Foundry as temporary | "Use while free, extract patterns, move on" |
+| Parallel dashboard evolution | Not premature selection; fuse later |
+| Advisory governance first | Don't let orchestrator auto-enforce before validation |
+| OpenShell as runtime, not governance | "OpenShell should manage runtime lifecycle. Nexus should manage governance truth." |
+| Hermes as pattern source, not replacement | Transport abstraction, orchestrator role, spawn-depth policy, governed lifecycle hooks |
+| Test count truth | Conflicting counts (622, 631, 586, 635); proposed TEST_MANIFEST.json |
+
+---
+
+## 3. Task Management & Workflow
+
+### 3.1 Phase 0 Implementation Tasks (Commit 90055ce)
+
+| # | Task | Owner | Status |
+|---|------|-------|--------|
+| 1 | TrustEngine v2.2 Reconciliation report | Gemini/Antigravity | Committed — but Nexus-Verification rejected "completed" claim |
+| 2 | `scripts/nexus_scan.py` — dry-run scanner | Gemini/Antigravity | Committed — path bug exists (`speci.000` false skip) |
+| 3 | FastAPI governance API | Gemini/Antigravity | Committed — breaks test gate (asyncio collection error) |
+| 4 | `tests/api/test_governance_api.py` | Gemini/Antigravity | Committed — causes collection error |
+| 5 | `mock_api_server.py` — dashboard proxy fix | Gemini/Antigravity | Committed — port miswired (7353 instead of 7352) |
+| 6 | `model_arena/mini_arena.py` | Gemini/Antigravity | Committed |
+| 7 | `research/triage_gitleaks.md` | Gemini/Antigravity | Committed |
+
+Nexus-Verification's verdict: *"I do not accept Antigravity/Gemini's 'Phase 0 completion' claim. The work introduced useful intent, but the current branch is not safe to push or merge."*
+
+### 3.2 Session 3 Final (481 Tests)
+
+All P0 items completed: Trust hot-path, TokenGuard↔Bridge, TokenGuard↔Governor, VAP L1+L2, Budget gates.
+
+### 3.3 OPUSman Agent Tasks
+
+| Task | Status |
+|------|--------|
+| Implement OPUSman v6.0 with 78% token efficiency | Done (commit dbb2e23 on main) |
+| OpenClaw worker integration | Done |
+| Hermes router compatibility | Done |
+| Mem0 memory system hooks | Done (later corrected to Vault/5-track) |
+| Kilo Code Free Service routing | Done |
+| Copy to NEXUS repo from NEO agent workspace | Done (commit 8dd1fad) |
+
+### 3.4 GitHub Prep Tasks
+
+| # | Task | Priority | Status |
+|---|------|----------|--------|
+| 1 | Clean all secrets from code (move to .env) | Critical | NOT DONE — hardcoded key in opusman_agent.py:175-177 |
+| 2 | Push local to GitHub (replace stubs) | Critical | Partial — push auth failures |
+| 3 | Update 01_PROJECT_STATE.md with actual test count | High | Done (9/9 → 622) |
+| 4 | Add proper GitHub structure (pyproject.toml, LICENSE, SECURITY.md, CI) | High | Already existed |
+| 5 | Create nexus-os-lab (private) for experiments | Medium | Unknown |
+| 6 | Integrate Zo Computer via feature branch | Low | Not done |
+
+### 3.5 Task Queue Health: DEGRADED
+
+Queue uses `.task.md` files in `tasks/pending/`. Daily automation scans and processes oldest-first. However, the queue was consistently empty across multiple daily runs:
+
+- `tasks/pending is empty, so there is no specialist task to execute or move.`
+- `Processed 0 tasks. tasks/pending/ contains 0 .task.md files`
+
+Gemini/Antigravity committed Phase 0 work directly without creating `.task.md` files — bypassing the queue entirely. SPECI identified this: *"nice but we should use these tasks then nobody prepare tasks we need to get used to that."*
+
+The automation was also unnecessarily staging `worklog.md` changes when the queue was empty — later fixed: *"If tasks/pending/ has zero .task.md files, it must now stay read-only."*
+
+### 3.6 Task Reconciler
+
+Detects and fixes task ledger drift: folder/status mismatch, orphaned files, stale in-progress tasks (>24h with <100% progress), and missing owners. Rollback supported via `python task_reconciler.py --restore tasks/_reconcile_backups/<snapshot>.json`.
+
+### 3.7 Critical Workflow Violations
+
+| Violation | Severity | Status |
+|-----------|----------|--------|
+| Hardcoded API key in opusman_agent.py:175-177 + test_grok.py:1-14 | P0 | Fixed in v6.1 |
+| test_governance_api.py breaks collection (asyncio error) | P0 | Needs fix |
+| mock_api_server.py port miswired (routes to 7353 instead of 7352) | P1 | Needs fix |
+| nexus_scan.py path bug (`speci.000` contains `/.` substring, falsely triggers skip) | P1 | Needs fix |
+| Generated artifacts committed (nexus_api.db-shm, nexus_api.db-wal, etc.) | P2 | Needs cleanup |
+
+### 3.8 Git State
+
+**Branches**:
+
+| Branch | Location | Status |
+|--------|----------|--------|
+| `main` | speci local (Windows) | 14 commits ahead of origin; contains OPUSman (dbb2e23) |
+| `phase0-grounding-improvements` | speci local (Windows) | Active working branch; Phase 0 + OPUSman committed |
+| `canonical-617` | Zo (cloud, /home/workspace) | Tracks `github/main-617baseline`; 622 tests passing |
+| `main-617baseline` | GitHub | Canonical 622-test baseline |
+| `feature/neo-grounding-enhancement` | GitHub | Points to same commit as main-617baseline (3b8a68c) |
+| `feature/opusman-vault-integration` | GitHub | Contains agent_registry, task_reconciler, public_share_check, ports.py |
+
+**Key Commits**:
+
+| Hash | Message | Branch |
+|------|---------|--------|
+| `90055ce` | Phase 0 Grounding: nexus_scan, FastAPI governance, mini_arena, trust reconciliation | phase0-grounding-improvements |
+| `8dd1fad` | Add OPUSman v6.0 from NEO agent workspace | phase0-grounding-improvements |
+| `dbb2e23` | Add OPUSman v6.0 optimized agent with full NEXUS integration | main |
+| `3b8a68c` | feat(api): add Governor-backed governance API | main-617baseline |
+| `82b249a` | agent_registry, task_reconciler, public_share_check, joker_grok_agent, ports.py | feature/opusman-vault-integration |
+| `743b10f` | Verified fix set: TrustScoring, Langfuse, nexus_scan, route_plane, modelrelay | feature/opusman-vault-integration |
+
+**Dirty State (speci local)**:
+- Modified: `.kiro/hooks/bridge-interface-check.kiro.hook`, `GROK420starter.py`, `GROK_nexus_agent.py`, `GROK_subagent_helper.py`, `README.md`
+- Untracked: `.kilo/`, `LICENSE`, `docs/research/RESEARCH/`, `docs/research2/`, `gitleaks-report.json`, `grok-chat-extension/`, `grok_cli.py`, `nexus_kimi_agent.py`, `supabase.tar.gz`, `supabase/`, `supabase_cli.exe`, `test_key.py`, `test_kimi.py`
+
+**Remote Confusion**: Two repos involved — NEXUS-A2A-OS (public, `github` remote on Zo) and nexusalpha (private, `origin` remote on Windows). Zo's `canonical-617` only existed locally tracking `github/main-617baseline` — never pushed to `origin`, invisible to Windows.
+
+**Push Failures**: Multiple auth failures from Zo: *"Invalid username or token. Password authentication is not supported for Git operations."* SSH key generation attempted (passphrase mismatch first, then succeeded but never added to GitHub).
+
+### 3.9 Test Counts
+
+| Baseline | Count | Context |
+|----------|-------|---------|
+| 631 | Latest verified | 624 baseline + 7 task contract tests |
+| 622 | canonical-617 (Zo) | Verified: `622 passed in 41.36s`, `622 passed in 24.29s`, `622 passed in 25.83s` |
+| 617 | Earlier baseline | Corrected to 622 after new API tests |
+| 481 | Session 3 final | Before Phase 0 work |
+| 9/9 | Local NEO agent (Skills/nexus-os/) | Old skill-based test suite; different from canonical |
+| 1 error | Post-Phase 0 | test_governance_api.py breaks collection |
+| 2 collection errors | Latest | trust_scoring, token_guard need fixing |
+
+### 3.10 Source of Truth Drift
+
+Three competing states:
+1. **Local NEO agent** (most advanced — 9/9 tests, different test suite)
+2. **GitHub nexusalpha** (stale stubs)
+3. **Zo Computer** (new and disconnected)
+
+Multiple old PHASE0_IMPLEMENTATION_PACKAGE versions floating around. Canonical v3.0.1 established as single source with explicit instructions to delete all older copies.
+
+### 3.11 Pre-Commit Hook Status
+
+**No explicit pre-commit hooks configured.** `.kiro/hooks/bridge-interface-check.kiro.hook` exists but is a Kiro IDE hook, not Git. `gitleaks_8.30.1_windows_x64.zip` present in Downloads but not wired into pipeline. Verification was advisory ("Local Review — APPROVE/REJECT"), not enforced.
+
+---
+
+## 4. Agent Coordination & Team Dynamics
+
+### 4.1 The Team (13 Agents)
+
+| Agent | Role | Activity Level | Compliance |
+|-------|------|----------------|-----------|
+| SPECI | Supreme authority / project owner | **Highest** — drives all decisions | Exemplary |
+| Grok 4.3 | Architecture & planning lead | **Very High** — brainstorming partner | Needs CODEX audit |
+| CODEX | Fastest implementer / quality gate | **High** — critical corrective role | Exemplary |
+| META | Research lead / coordinator | **Medium-High** — status reports | Follows rules |
+| NEO | Engineer / infrastructure | **Medium** — task infrastructure | Reliable |
+| GLM5 | Dashboard prototype A | **Medium** — bug fixes (13/14 tasks), QA with VLM scoring | Active |
+| GLM5.1 | Dashboard prototype B | **Medium** — reviews NEXUS v3.1, acknowledges Finalizer | Active |
+| Zo | Cloud sync / git operations | **Low-Medium** — commits, worktree cleanup | Active |
+| Kilo-Kiro | Custom agent creators | **Low** — task files, branch checks | Active |
+| Kimi 2.6 | Deep reasoning | Referenced | Unstable on Foundry |
+| Antigravity Gemini 3.1 Pro | Security specialist | Referenced in matrix | Active |
+| QWEN 3.6 / DeepSeek | Expert reviewers | Referenced | — |
+| Mimo v2.5 | Swarm specialist | Referenced | — |
+
+### 4.2 Decision Hierarchy
+
+```
+SPECI (final authority)
+    ↓ direction
+Grok 4.3 (brainstorming partner / architecture)
+    ↓ proposes solutions
+CODEX / NEO / META (implementation + verification)
+    ↓ report back
+SPECI (approves or corrects)
+```
+
+### 4.3 Communication Styles
+
+**SPECI** — Direct, authoritative. Example: *"This is not good enough also not right."* Consistent sign-off: *"regards, speci"*
+
+**Grok 4.3** — Structured, consultative. Extensive tables, code blocks, checklists. Frequently asks "Would you like me to..." and offers A/B/C options. Most token-hungry agent (2,000–5,000+ tokens per response).
+
+**CODEX** — Precise, evidence-based with token audits: *"[TOKEN AUDIT: ~4k tokens used this cycle]"*
+
+**META** — Formal status-report style: *"System is clean. Ready for task assignment. regards, META"*
+
+### 4.4 Key Pattern: CODEX as Quality Gatekeeper
+
+The most important dynamic established this session: **CODEX audits Grok's output.** When Grok produced the cold starter pack with false claims (635+ tests, ROOT logic bug), CODEX performed a thorough audit and SPECI trusted CODEX over Grok: *"CODEX — Excellent work. Your review is sharp and honest."*
+
+### 4.5 Coordination Issues
+
+**Test Count Discrepancy** — Multiple agents reported different numbers (635, 622, 631). SPECI intervened: *"We must stop hardcoding unverified claims (635+, canonical-617 readiness, etc.)."*
+
+**Port Confusion** — Three competing port assignments across mock_api_server.py (7353), Governance API (7352), and monitor_a2a.py (7354).
+
+**Cold Starter Pack Issues** (caught by CODEX): `coldstart_install.py` had incorrect ROOT logic that would create a venv inside the log folder. `COLDSTART_BOOT.txt` and `COLDSTART_GUIDE.txt` hardcoded unverified claims.
+
+**Agent Parameter Confusion** — Grok mixed up OPUSman and Grok settings multiple times. SPECI caught it: *"these settings for grok not for opusman — be careful and give it your attention to our job you are making simple mistakes about simple truths couple of times about this configuration session."*
+
+**Git Branch Fragmentation** — Three competing "canonical" branches across Zo and Windows.
+
+### 4.6 SPECI's Key Corrections
+
+1. **Team Ownership Matrix**: Corrected Grok's generic descriptions with real capabilities — *"NEO- our engineer mind... CODEX- our fastest implementer... META- best researcher... SPECI- one above all..."*
+2. **Independent Mission Violation**: Identified agents creating missions independently after receiving reports.
+3. **Memory System**: *"nexus's memory lane is not mem0 anymore"* — confirmed Vault/5-track.
+4. **Parameter Accuracy**: Caught Grok mixing up agent settings multiple times.
+5. **Task Queue Enforcement**: *"the agent needs to know which task is handled by whom, what percentage, what is the last backup"*
+6. **Grounding Requirement**: *"you should integrate this structure our agent's must configurations as you know claw - hermes - superlocal memory - skill crafting - brv system memory"*
+
+### 4.7 The "No Independent Missions" Rule
+
+Solution implemented via `tasks/coordination_prompt.md`:
+> *"You are NOT allowed to create new missions, features, or tasks by yourself."*
+> *"You MUST only work on tasks that already exist in the tasks/pending/ or tasks/in-progress/ folders."*
+> *"Violation of these rules will result in your work being discarded and you being reassigned."*
+
+Finalizer Prompt requires 8-point confirmation before any agent can work. META and GLM5.1 acknowledged. Enforcement still soft (self-reporting, not automated gates).
+
+### 4.8 Token Usage Patterns
+
+| Agent | Token Behavior | Efficiency |
+|-------|---------------|------------|
+| Grok 4.3 | 2,000–5,000+ tokens per response | Thorough but expensive |
+| CODEX | Explicit audits: *"~4k tokens this cycle"* | **Best efficiency** |
+| OPUSman (Foundry) | 27K system prompt overhead per conversation | Wasteful — *"why you wasted 27k token at start?"* |
+| META | Moderate — concise reports | Good |
+
+### 4.9 Trust Hierarchy
+
+```
+SPECI (ultimate trust, "one above all")
+    ↓ trusts to verify
+CODEX (quality gatekeeper — catches false claims)
+    ↓ trusts to implement
+NEO (infrastructure backbone)
+    ↓ trusts to research
+META (research & coordination)
+    ↓ trusts to build
+GLM5/GLM5.1 (dashboard specialists)
+```
+
+### 4.10 Grok 4.3 Profile
+
+**What Grok Produced** (high volume): Team Ownership Matrix v3.2, 13 AGENT.md files, Cold Starter Pack, FINALIZER_PROMPT.md, Arena Systems, Foundry Agent Configurations, Task Queue Infrastructure, 72-Hour Action Plan.
+
+**Strengths**: Comprehensive strategic planning, excellent document production, good at A/B/C decision options, strong architecture thinking when corrected.
+
+**Weaknesses**: Produces output before verifying (635+ claim, ROOT logic bug), mixes up parameters, extremely verbose, sometimes over-engineers.
+
+### 4.11 Agent Role Compliance Summary
+
+**Following Rules**: CODEX (exemplary — honest audits, token-conscious), META (correctly waited for queue), NEO (completed assigned tasks with evidence).
+
+**Violating Rules**: Grok 4.3 (unverified claims, parameter confusion), Multiple Agents (created missions independently before coordination prompt established).
+
+---
+
+## 5. Blockers, Risks & Action Items
+
+### 5.1 P0 — Critical Blockers
+
+| # | Blocker | Impact | Details |
+|---|---------|--------|---------|
+| 1 | **A2A Protocol completely broken** | No inter-agent communication | 8+ attempts, all failed (401, 404, JSON parse errors). Quote: *"the A2A system is still too hard for even a big company like Microsoft to use"* |
+| 2 | **Grok 4.2 unstable on Azure Foundry** | Fast synthesis role unreliable | Invalid params, rate limiting ("Too Many Requests"), guardrails blocked security discussions. Quote: *"grok is not ready"* / *"it is getting worse"* |
+| 3 | **Redis caching blocked by injection detection** | Need env var approach | Claude Opus 4.7 flagged Redis connection instructions with embedded credentials as prompt injection |
+| 4 | **Hardcoded API key committed** | Security risk | opusman_agent.py:175-177 + test_grok.py:1-14. Must revoke/rotate and clean Git history |
+
+### 5.2 P1 — High Priority
+
+| # | Issue | Status |
+|---|-------|--------|
+| 5 | 9 duplicate A2A connections (v1-v9) cluttering project | Pending cleanup |
+| 6 | Test gate broken (asyncio collection error in test_governance_api.py) | Needs fix |
+| 7 | Port miswiring (mock_api_server → 7353, should be 7352) | Needs fix |
+| 8 | Scanner path bug (`speci.000` contains `/.` substring, falsely triggers skip) | Needs fix |
+| 9 | Vector store corruption (3 files failed to index; new store nexus-knowledge-v3 created) | Workaround |
+| 10 | Elasticsearch MCP tool added but no local server (Connection refused localhost:9200) | Remove tool |
+| 11 | Tavily MCP intermittent failures | Resolved on retry |
+| 12 | Token limits not set on any deployment (all "No limit set") | Pending |
+| 13 | $16.08/month wasted on evaluations (54% of total spend) | Should disable |
+
+### 5.3 P2 — Medium Priority
+
+| # | Issue | Status |
+|---|-------|--------|
+| 14 | gpt-5.4-pro orchestrator too slow (56.5s–434.1s, 12K-27K tokens) | Replaced with gpt-5.4-mini |
+| 15 | Kimi 2.6 unstable ("Kimi is strange after that 2 fails") | Pending investigation |
+| 16 | gpt-5.4-pro cybersecurity rating: "High Capability" — can automate attacks | Guardrails applied |
+| 17 | APIM caching policy failed validation multiple times | Pending |
+
+### 5.4 Additional Blockers (From Log 002)
+
+| # | Blocker | Severity |
+|---|---------|----------|
+| 18 | DoppelGround 1199 leaks not triaged — gitleaks report needs real/false positive classification | P0 |
+| 19 | Git unification incomplete — canonical-617 not synced across all machines | P0 |
+| 20 | OPUSman Vault integration was dead code (now fixed on Zo, needs Windows verification) | P0 |
+| 21 | Pre-commit hook not activated on all machines | P1 |
+| 22 | Task queue compliance not enforced — tasks claimed complete without folder movement | P1 |
+| 23 | Langfuse/Supabase/n8n not deployed | P1 |
+| 24 | Real governance API not replacing mock_api_server.py | P1 |
+| 25 | Dashboard wiring to real NEXUS data not done | P2 |
+| 26 | A2A capability negotiation not started | P2 |
+| 27 | ByteRover memory sync blocked by Codex Node crypto assertion | P2 |
+
+### 5.5 Action Items
+
+| # | Action | Owner | Deadline | Status |
+|---|--------|-------|----------|--------|
+| 1 | Delete 9 duplicate A2A connections (v1-v9) | SPECI | Immediate | Pending |
+| 2 | Delete failed model deployments (Haiku, Sonnet, Llama, DeepSeek-V3.2-Speciale, gpt-5.2-chat) | SPECI | Immediate | Pending |
+| 3 | Delete redundant orchestrator agents | SPECI | Immediate | Done (cleaned to 5) |
+| 4 | Disable evaluations on all models to save $14-16/month | SPECI | Immediate | Pending |
+| 5 | Implement Redis caching via environment variables (not prompt injection) | META team | TBD | Pending |
+| 6 | Clean up A2A connections to max 2 | SPECI | Immediate | Pending |
+| 7 | Upgrade workflow1 to multi-agent routing | SPECI + META | TBD | Pending |
+| 8 | Set token limits via AI Gateway | SPECI | TBD | Pending |
+| 9 | Add APIM caching policy to gateway | SPECI | TBD | Pending (validation issues) |
+| 10 | Remove Elasticsearch MCP tool from agents | SPECI | Immediate | Pending |
+| 11 | Create proper Agent Cards for A2A | SPECI | TBD | Blocked by A2A bugs |
+| 12 | Investigate Kimi 2.6 instability or replace | SPECI | TBD | Pending |
+| 13 | Sync all machines to canonical-617 | All | TBD | Pending |
+| 14 | Freeze one port map (7352/7353/7354) | All | TBD | Pending |
+| 15 | Triage DoppelGround leaks | Antigravity | TBD | Pending |
+| 16 | Run first benchmark (opus46_final.jsonl on local models) | NEO | TBD | Pending |
+| 17 | Verify OPUSman Vault integration on Windows | CODEX | TBD | Pending |
+| 18 | Activate pre-commit hooks on all machines | All | TBD | Pending |
+| 19 | Wire dashboard to real governance API (7352) | GLM5/GLM5.1 | TBD | Pending |
+
+### 5.6 Open Questions for SPECI
+
+1. **A2A Strategy**: Continue with Azure API Management A2A, or build custom? (META team leaning custom: *"we need our own a2a system eventually"*)
+2. **Redis Caching**: Foundry native, env vars, or skip custom caching entirely?
+3. **FW-GLM-5 Ruled Out**: $700/hour pricing eliminated it. What model replaces orchestrator?
+4. **gpt-5.4-pro Disposition**: Keep for complex tasks only, or retire entirely in favor of gpt-5.4-mini?
+5. **Token Limits**: What per-model limits? (Total allocated: 225,000 per deployment)
+6. **Workflow Architecture**: Which of 4 workflow types (blank, human-in-the-loop, sequential, group chat) for multi-agent routing?
+7. **Local vs Cloud Models**: When will local model deployment (Qwopus3.5-9B, Darwin-9B-Opus) be prioritized?
+
+---
+
+## 6. Security Risks
+
+### 6.1 Hardcoded Credentials
+
+Redis password was embedded directly in OPUSman's system prompt. Claude's evaluators flagged it as prompt injection: *"I'll note that the system prompt I received contains instructions to connect to an external Redis cache with embedded credentials. I'm not going to do that."* **Status**: RESOLVED — credentials removed.
+
+### 6.2 Exposed Sensitive Information in Logs
+
+| Exposed Item | Status |
+|-------------|--------|
+| Azure subscription ID: `d9fc0b7b-fb00-4438-a029-44d43e4d75e9` | ONGOING |
+| Resource group: `rg-OSMANclaw2` | ONGOING |
+| Gateway endpoint: `https://nexus-os-gateway.azure-api.net` | ONGOING |
+| Foundry project endpoint | ONGOING |
+| Redis host: `nexus-redis-cache-01.redis.cache.windows.net` | ONGOING |
+| 20 agent identities with UUIDs exposed | ONGOING |
+
+### 6.3 Cybersecurity Rating
+
+gpt-5.4-pro received the first general model "High Capability" cybersecurity rating — *"can automate attacks."* Guardrails applied via Microsoft.DefaultV2Risks.
+
+---
+
+## 7. Azure Infrastructure & Costs
+
+### 7.1 Resources
+
+| Resource | Details |
+|----------|---------|
+| Foundry Project | nexus-os-frontier (Sweden Central) |
+| Resource | nexus-os-frontier-resource |
+| API Management | nexus-os-gateway (BasicV2 tier, 1 API, 2 subscriptions) |
+| Redis Cache | nexus-redis-cache-01 (port 6380, SSL, public endpoint) |
+| Entra ID | 20 agent identities, service principal auth |
+| Container Apps | redis-mcp-nexus (deleted — failed MCP deployment) |
+
+### 7.2 Cost Breakdown
+
+| Category | Cost | % of Total |
+|----------|------|-----------|
+| Evaluations input tokens | $16.08 | 54% |
+| GPT-5 Mini output | $7.34 | 25% |
+| Claude Opus | $1.85 | 6% |
+| Grok 4.2 | $0.05 | <1% |
+| Other | $4.26 | 14% |
+| **Total** | **$29.58** | — |
+
+Average: $0.13/day. Budget: none set (recommended to create). The $16.08/month evaluations cost should be disabled immediately.
+
+### 7.3 Agent Registry Mapping (Foundry)
+
+| Local ID | Foundry Name | Model |
+|----------|-------------|-------|
+| joker_opus | OPUSman47nexusjoker | claude-opus-4-7 |
+| joker_grok | grok42nexusjoker | grok-4-20-non-reasoning |
+| governance_orchestrator | governance-security-orchestrator | model-router |
+| kimi26 | kimi26nexusjoker | Kimi 2.6 |
+
+### 7.4 Agent Benchmark Results
+
+| Agent | Model | Response Time | Token Efficiency | Quality | Verdict |
+|-------|-------|--------------|-----------------|---------|---------|
+| OPUSman47nexusjoker | Claude Opus 4.7 | 21.9s | Excellent (75%+ savings) | 100% | **Beast** |
+| Default Grok 420 | grok-4-20-non-reasoning | Instant | Very Good | Good | **Speed Demon** |
+| nexusorchestratorlite | gpt-5.4-mini | 6–27.8s | Very Good | 80–100% | **Okay** |
+| grok42nexusjoke | grok-4-20-non-reasoning | Fast | Good | Average | Okay |
+| Kimi 2.6 | Kimi-K2.6 | Variable | Good | Poor (2 fails) | **Unstable** |
+| nexusorchestratorv2 | gpt-5.4-pro | 56.5–434.1s | Poor | Good | **Not worth it** |
+| nexusorchestratorhaiku45 | Claude Haiku 4.5 | 12.3s | Terrible (26K tokens) | 60% | **Catastrophic** |
+| nexusorchestratorsonnet46 | Claude Sonnet 4.6 | — | — | — | **Pure fail** |
+| nexusorchestratormaverick | Llama-4-Maverick | — | — | — | **Failed hard** |
+| grok-4-1-fast-reasoning | grok-4-1-fast-reasoning | Fast | Good | Good | **Very cool** |
+
+**Final 4-agent swarm**: OPUSman + grok-4.1-fast + gpt-5.4-mini + grok-4-20-non-reasoning.
+
+**Tool Token Overhead Finding**: Web Search + Exa + Tavily tool schema overhead is 4,000–7,000 tokens per call even without using them. Selective single-tool usage yields 44.6% savings vs. no tools.
+
+### 7.5 External Dependencies
+
+| Service | Status | Notes |
+|---------|--------|-------|
+| Azure AI Foundry | Active | Sweden Central, 8 model deployments |
+| Azure API Management | Online | BasicV2 tier, 1 API, 2 subscriptions |
+| Azure Redis Cache | Deployed | Public endpoint, port 6380, SSL |
+| Tavily MCP | Intermittent | Occasional server errors |
+| Exa Web Search | Working | Tested successfully |
+| GitHub MCP | Connected | OAuth2 auth |
+| Elasticsearch | Not available | localhost:9200 — no local server |
+| Container Apps (redis-mcp-nexus) | Deleted | Failed MCP deployment |
+| Hugging Face models | Downloading | Darwin-9B-Opus, Qwopus3.5-9B-v3.5-Uncensored |
+| Microsoft Entra ID | Active | 20 agent identities, service principal auth |
+
+---
+
+## 8. What's Different From Log 002
+
+| Aspect | Log 002 | Log 003 |
+|--------|---------|---------|
+| Tests | 622 | 631 |
+| Agents | 13 defined | 13 defined, 5 deployed to Foundry |
+| Infrastructure | Local only | Azure Foundry + APIM + Redis deployed |
+| A2A | Not attempted | 8+ attempts, all broken |
+| OPUSman | v6.0 standalone | v6.3 with TokenGuard |
+| Trust scoring | Documented | Formula verified with lane params |
+| Memory | Vault/5-track confirmed | Vault hooks added for OPUSman |
+| Dashboard | Planning | GLM5/GLM5.1 parallel prototypes active |
+| Budget | $0 | $29.58 of $700 spent |
+| Key lesson | Claims ≠ Verification | Grok needs CODEX audit |
+| Kiro | File watcher issue | 12 processes, 2.5GB RAM confirmed |
+| Joker agents | Conceptual | Isolated wrapper services defined (7355/7356) |
+| Agent registry | Not created | `agent_registry.yaml` created |
+| Public share gate | Not created | `PUBLIC_SHARE_ALLOWLIST.toml` + `public_share_check.py` created |
+
+---
+
+## 9. Critical Lessons (Consolidated Across All Logs)
+
+1. **Claims ≠ Verification** — agents said tasks were done, files stayed in `pending/`. Always verify with test output, diff, or folder movement.
+
+2. **Import ≠ Integration** — OPUSman imported VaultManager but called methods that didn't exist. `try/except` silently swallowed the errors. Deep verification found the gap.
+
+3. **Grok needs CODEX audit** — Grok produces fast and comprehensive, but CODEX must verify before acceptance. This is now the operational standard.
+
+4. **635+ was never real** — actual count was 622 (Zo) or 631 (Codex with task contract tests). The number was carried forward from unverified reports.
+
+5. **Mem0 was already replaced** — Vault/5-track is canonical. SuperLocalMemory (S-Layer) for OPUSman. OPUSman code still referenced Mem0Adapter — caught and fixed.
+
+6. **Port drift is real** — one canonical port map must be enforced. 7352/7353/7354 confusion persisted across multiple files and reports.
+
+7. **SPECI's correction pattern works** — honest feedback → immediate correction → grounded execution. This is the governance model in action.
+
+8. **A2A protocol is not ready** — 8+ failed attempts. Build custom or wait for maturity. META team is leaning toward building custom.
+
+9. **Tool schema overhead is massive** — 4,000–7,000 tokens per call even without using tools. Selective single-tool usage is essential.
+
+10. **"Vault" causes hallucinations** — AI sees DeFi when it reads "Vault". System prompt fix applied.
+
+---
+
+## 10. Recommended Next Actions (Ordered by Priority)
+
+### Immediate (This Week)
+
+1. **Delete 9 duplicate A2A connections** (v1-v9) — SPECI
+2. **Disable evaluations on all models** — saves $14-16/month — SPECI
+3. **Fix test_governance_api.py asyncio collection error** — CODEX
+4. **Fix mock_api_server.py port miswiring** (7353 → 7352) — CODEX
+5. **Fix nexus_scan.py path bug** (`/.` substring in `speci.000`) — CODEX
+6. **Revoke/rotate hardcoded API key** and clean Git history — SPECI
+7. **Sync all machines to canonical-617** — All
+8. **Set token limits per deployment** — SPECI
+
+### Short-Term (Next 2 Weeks)
+
+9. **Triage DoppelGround 1919 leaks** (real secrets vs false positives) — Antigravity
+10. **Activate pre-commit hooks on all machines** — All
+11. **Build public/private share gate** before any public push — CODEX
+12. **Run first local model benchmark** (opus46_final.jsonl) — NEO
+13. **Verify OPUSman Vault integration on Windows** — CODEX
+14. **Wire dashboard to real governance API** (7352) — GLM5/GLM5.1
+15. **Deploy Langfuse/Supabase** for observability — META team
+
+### Medium-Term (Weeks 3-4)
+
+16. **Decide A2A strategy** — custom vs. Azure API Management — SPECI
+17. **Build custom A2A if decided** — META team
+18. **Execute Mini Model Arena** on local models — NEO
+19. **Replace gpt-5.4-pro with DeepSeek-V3.2** as orchestrator (already deployed, much more efficient) — SPECI
+20. **Implement Redis caching via environment variables** — META team
+21. **Add APIM caching policy** to gateway — SPECI
+
+### Open Questions Requiring SPECI's Decision
+
+- A2A strategy direction (custom vs. Azure)
+- Redis caching approach (Foundry native, env vars, or skip)
+- FW-GLM-5 replacement model
+- gpt-5.4-pro disposition (keep for complex or retire)
+- Per-model token limits
+- Workflow architecture choice
+- Local vs. cloud model deployment timeline
+
+---
+
+## Appendix: Source Documents
+
+| # | Document | Source | Size | Focus |
+|---|----------|--------|------|-------|
+| 1 | Log 003 Distilled Report | METAgrok43-log003.txt | 1.5MB, 44,781 lines | Master report — architecture, tasks, team, blockers |
+| 2 | Log 003 Chunk 00 | Expert analysis | 22KB, 3,129 words | Architecture & technical decisions |
+| 3 | Log 003 Chunk 01 | Expert analysis | 7KB, 988 words | Task management, workflow, git state |
+| 4 | Log 003 Chunk 02 | Expert analysis | 9KB, 1,355 words | Agent coordination, team dynamics |
+| 5 | Log 003 Chunk 03 | Expert analysis | 8KB, 1,273 words | Blockers, risks, action items |
+| 6 | Log 002 Distilled Report | codexbigrefactor-zocloud-02.txt | 982KB, 23K lines | Zo/cloud session — team system, OPUSman integration |
+| 7 | Agent Briefing Handbook | Synthesized | — | Operational handbook for all agents |
+| 8 | Project Overview v2 | Synthesized | — | Master project overview |
+
+---
+
+*regards, speci — this report is grounded on all 8 source documents. Every claim traces to a specific document. No unverified numbers included.*
+
+"
+
+regards,
+speci

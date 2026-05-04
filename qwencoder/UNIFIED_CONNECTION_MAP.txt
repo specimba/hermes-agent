@@ -1,0 +1,154 @@
+# NEXUS Unified — Repository Connection Map
+
+Maps how 7 source repositories connect to form the unified platform.
+
+## Repository Roles
+
+| # | Repo | Role | Language | Key Contribution |
+|---|------|------|----------|-----------------|
+| 1 | **hermes-agent** | Full agent runtime | Python | 30+ tools, CLI, multi-platform gateway, session DB, MCP client, skin engine |
+| 2 | **agent-framework** | Workflow engine | Python/.NET | Graph-based DAG orchestration, streaming, checkpointing, time-travel, A2A |
+| 3 | **claw-code-parity** | Harness engineering | Rust/Python | Permission engine, execution registry, command routing, parity auditing |
+| 4 | **awesome-free-llm-apiss** | Provider catalog | JSON | Structured free LLM provider data: base URLs, models, rate limits, context windows |
+| 5 | **free-llm-api-resources** | Live fetcher | Python | Auto-fetch model availability from Groq, OpenRouter, Google, HuggingFace |
+| 6 | **free-for-dev** | Infra catalog | Markdown | 1600+ free developer services (hosting, CI, DBs, monitoring) |
+| 7 | **clawcode** | Reference patterns | TypeScript | Claude Code agent harness architecture reference |
+
+## Data Flow Connections
+
+```
+awesome-free-llm-apiss (static JSON catalog)
+       │
+       ├──► providers/catalog.py ◄── free-llm-api-resources (live fetcher)
+       │          │
+       │          ▼
+       │    providers/router.py ──► SELECT best provider per task
+       │          │
+       │          ├── Speed ranking (Cerebras ~2600 tok/s, Groq ~500 tok/s)
+       │          ├── Quality ranking (Gemini 95, Mistral 90, GitHub 85)
+       │          └── Rate limit tracking ◄── providers/rate_limiter.py
+       │                                          │
+       │                                          ▼
+       └─────────────────────────► GMR Engine tiers (nexusalpha)
+                                   minimax=95, claude-code=90, openrouter=75,
+                                   groq=70, cerebras=65
+
+hermes-agent (tools/registry.py)
+       │
+       ├──► tools/registry.py ◄── claw-code-parity (src/tools.py)
+       │      │                       │
+       │      │ register()            │ PermissionContext
+       │      │ get_definitions()     │ filter_tools_by_permission()
+       │      │ dispatch()            │ ToolExecution tracking
+       │      │                       │
+       │      └──► UNIFIED dispatch with permission checks + audit
+       │                  │
+       │                  ▼
+       │           governance/hooks.py ◄── nexusalpha Governor
+       │             │
+       │             ├── TrustScorer v2.1 (lane-scoped Bayesian)
+       │             ├── TokenGuard (budget enforcement)
+       │             └── VAP chain (SHA-256 audit trail)
+       │
+       ├──► gateway/core.py (multi-platform messaging)
+       │      Telegram │ Discord │ Slack │ WhatsApp │ Signal │ HomeAssistant
+       │
+       └──► orchestration/agent_loop.py (conversation loop)
+
+agent-framework (graph-based workflows)
+       │
+       └──► orchestration/workflow.py ◄── nexusalpha Swarm
+              │                              (Foreman/Worker/Task/Bid)
+              ├── DAG node scheduling
+              ├── Checkpoint save/restore (time-travel)
+              ├── Human-in-the-loop pause/resume
+              └── Parallel fork/join (Swarm pattern)
+
+claw-code-parity (harness engineering)
+       │
+       └──► harness/execution_registry.py
+              │
+              ├── Command routing (claw-code-parity runtime.py)
+              ├── Tool execution tracking (ToolExecution results)
+              └──► harness/runtime_session.py
+                     │
+                     └── Full session bootstrap:
+                         tools + providers + permissions + governance
+
+free-for-dev (infrastructure catalog)
+       │
+       └──► infrastructure/catalog.py
+              │
+              └── Deployment recommendations:
+                  • Fly.io → Governance API (port 7352)
+                  • Supabase → Vault/session storage
+                  • Vercel → Dashboard hosting
+                  • Grafana Cloud → TokenGuard telemetry
+                  • Cerebras/Groq → FAST pool GMR providers
+```
+
+## Specific Code-Level Overlaps
+
+### 1. Tool Registries (hermes-agent ↔ claw-code-parity)
+
+| Pattern | hermes-agent | claw-code-parity | Unified |
+|---------|-------------|-----------------|---------|
+| Registration | `registry.register(name, schema, handler)` | `PORTED_TOOLS` tuple | `register()` with both |
+| Schema format | OpenAI function calling | Custom dict | OpenAI format |
+| Dispatch | `dispatch(name, args)` | `execute_tool(name)` → `ToolExecution` | `dispatch()` with audit |
+| Availability | `check_fn()` per tool | — | `check_fn()` preserved |
+| Permissions | — | `filter_tools_by_permission_context()` | `PermissionContext` on all |
+| Toolsets | `_HERMES_CORE_TOOLS` list | — | Toolset grouping preserved |
+
+### 2. Session Management (hermes-agent ↔ claw-code-parity ↔ nexusalpha)
+
+| Layer | hermes-agent | claw-code-parity | nexusalpha |
+|-------|-------------|-----------------|------------|
+| Session store | `SessionDB` (SQLite FTS5) | `RuntimeSession` dataclass | Vault (5-track memory) |
+| Persistence | `~/.hermes/sessions/` | In-memory | `src/nexus_os/db/` |
+| Context | `prompt_builder.py` | `route_prompt()` | Engine routing |
+
+### 3. Command Routing (hermes-agent ↔ claw-code-parity)
+
+| Aspect | hermes-agent | claw-code-parity |
+|--------|-------------|-----------------|
+| Registry | `COMMAND_REGISTRY` list | `build_execution_registry()` |
+| Resolution | `resolve_command()` with aliases | Token matching vs inventory |
+| Dispatch | `process_command()` method | `PortRuntime.route_prompt()` |
+
+### 4. Provider Intelligence (awesome-free-llm-apiss ↔ free-llm-api-resources ↔ GMR)
+
+| Aspect | awesome-free-llm-apiss | free-llm-api-resources | nexusalpha GMR |
+|--------|----------------------|----------------------|---------------|
+| Data | Static JSON (20+ providers) | Live API calls | Tier rankings |
+| Update freq | Manual curation | `ThreadPoolExecutor` fetch | Config-based |
+| Coverage | Provider metadata | Model availability | Budget routing |
+
+## Trust Flow
+
+```
+User request
+    │
+    ▼
+PermissionContext.check(tool_name)     ← claw-code-parity
+    │
+    ├─ blocked_tools set?              → DENIED
+    ├─ allowed_tools whitelist?        → DENIED if not in list
+    │
+    ▼
+GovernanceHooks.check_tool_access()    ← nexusalpha Governor
+    │
+    ├─ Governor available?
+    │   ├─ YES → Governor.check() → TrustScorer v2.1
+    │   └─ NO  → default permissive + audit
+    │
+    ▼
+GovernanceHooks.check_token_budget()   ← nexusalpha TokenGuard
+    │
+    ├─ Budget OK      → process, track
+    ├─ Exceeded       → 429 + failover
+    └─ Hard Stop      → block
+         │
+         ▼
+    AuditEntry → VAP chain (SHA-256 hash chain)
+```
