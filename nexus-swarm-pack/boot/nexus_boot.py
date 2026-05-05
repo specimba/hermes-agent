@@ -6,6 +6,13 @@ Bridges Nexus Kernel (Port 7352) with OpenShell Execution Substrate
 
 import sys
 import os
+
+# Inject local paths
+script_dir = os.path.dirname(os.path.abspath(__file__))
+pack_dir = os.path.dirname(script_dir)
+if pack_dir not in sys.path:
+    sys.path.insert(0, pack_dir)
+import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nexus_kernel import KAIJUGovernor, VAPChain, TokenGuard, ArchivistV5
