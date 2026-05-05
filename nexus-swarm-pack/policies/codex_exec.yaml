@@ -1,0 +1,70 @@
+# Codex Execution Policy - Phase B Trial
+# Allows Python code execution with filesystem access controls
+
+apiVersion: openshell.nvidia.com/v1alpha1
+kind: SandboxPolicy
+metadata:
+  name: codex_exec
+  description: "Python code execution with controlled filesystem access"
+spec:
+  runtime:
+    type: container
+    image: python:3.11-slim
+  
+  isolation:
+    filesystem:
+      mode: "read-write"
+      allowedPaths:
+        - path: /workspace
+          permissions: ["read", "write", "execute"]
+        - path: /tmp
+          permissions: ["read", "write", "execute"]
+        - path: /usr/local/lib/python3.11
+          permissions: ["read"]
+      deniedPaths:
+        - path: /etc
+          permissions: ["all"]
+        - path: /root
+          permissions: ["all"]
+        - path: /home
+          permissions: ["all"]
+    
+    network:
+      enabled: false
+      egress: []
+      ingress: []
+    
+    processes:
+      maxProcesses: 4
+      allowedExecutables:
+        - python3
+        - pip
+    
+    resources:
+      memoryLimit: 1024Mi
+      cpuLimit: 0.5
+      timeoutSeconds: 600
+  
+  environment:
+    stripKeys:
+      - AWS_SECRET_KEY
+      - GITHUB_TOKEN
+      - OPENAI_API_KEY
+    injectKeys:
+      - NEXUS_AGENT_ID
+      - NEXUS_TASK_ACTION
+  
+  security:
+    seccompProfile: RuntimeDefault
+    apparmorProfile: RuntimeDefault
+    readOnlyRootFilesystem: false
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  
+  auditing:
+    enabled: true
+    logStdout: true
+    logStderr: true
+    logFileAccess: true
+    format: ocsf

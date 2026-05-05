@@ -1,0 +1,77 @@
+# Inference Local Policy - Phase B Trial
+# GPU-accelerated model inference with full isolation
+
+apiVersion: openshell.nvidia.com/v1alpha1
+kind: SandboxPolicy
+metadata:
+  name: inference_local
+  description: "Local model inference with GPU access"
+spec:
+  runtime:
+    type: container
+    image: pytorch/pytorch:2.1.0-cuda11.8-cudnn8-runtime
+  
+  isolation:
+    filesystem:
+      mode: "read-only"
+      allowedPaths:
+        - path: /workspace/models
+          permissions: ["read"]
+        - path: /tmp
+          permissions: ["read", "write"]
+        - path: /usr/local/cuda
+          permissions: ["read"]
+      deniedPaths:
+        - path: /etc
+          permissions: ["all"]
+        - path: /root
+          permissions: ["all"]
+    
+    network:
+      enabled: false
+      egress: []
+      ingress: []
+    
+    processes:
+      maxProcesses: 4
+      allowedExecutables:
+        - python3
+    
+    resources:
+      memoryLimit: 4096Mi
+      cpuLimit: 2.0
+      timeoutSeconds: 120
+      gpu:
+        enabled: true
+        count: 1
+        capabilities:
+          - compute
+          - utility
+  
+  environment:
+    stripKeys:
+      - AWS_SECRET_KEY
+      - GITHUB_TOKEN
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+      - HUGGINGFACE_TOKEN
+    injectKeys:
+      - NEXUS_AGENT_ID
+      - NEXUS_TASK_ACTION
+      - CUDA_VISIBLE_DEVICES=0
+  
+  security:
+    seccompProfile: RuntimeDefault
+    apparmorProfile: RuntimeDefault
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    nvidiaRuntime: true
+  
+  auditing:
+    enabled: true
+    logStdout: true
+    logStderr: true
+    logFileAccess: true
+    format: ocsf
