@@ -1,0 +1,69 @@
+# OpenCode Analysis Policy - Phase B Trial
+# Read-only code analysis with no network access
+
+apiVersion: openshell.nvidia.com/v1alpha1
+kind: SandboxPolicy
+metadata:
+  name: opencode_analysis
+  description: "Static code analysis with read-only filesystem"
+spec:
+  runtime:
+    type: container
+    image: python:3.11-slim
+  
+  isolation:
+    filesystem:
+      mode: "read-only"
+      allowedPaths:
+        - path: /workspace
+          permissions: ["read"]
+        - path: /tmp
+          permissions: ["read", "write"]
+      deniedPaths:
+        - path: /etc
+          permissions: ["all"]
+        - path: /root
+          permissions: ["all"]
+    
+    network:
+      enabled: false
+      egress: []
+      ingress: []
+    
+    processes:
+      maxProcesses: 2
+      allowedExecutables:
+        - python3
+        - cat
+        - grep
+        - find
+    
+    resources:
+      memoryLimit: 2048Mi
+      cpuLimit: 1.0
+      timeoutSeconds: 300
+  
+  environment:
+    stripKeys:
+      - AWS_SECRET_KEY
+      - GITHUB_TOKEN
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    injectKeys:
+      - NEXUS_AGENT_ID
+      - NEXUS_TASK_ACTION
+  
+  security:
+    seccompProfile: RuntimeDefault
+    apparmorProfile: RuntimeDefault
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  
+  auditing:
+    enabled: true
+    logStdout: true
+    logStderr: true
+    logFileAccess: true
+    format: ocsf
