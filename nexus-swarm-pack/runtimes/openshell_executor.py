@@ -8,6 +8,13 @@ import requests
 import json
 from dataclasses import dataclass
 from datetime import datetime
+import sys
+from pathlib import Path
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from runtimes.ocsf_audit import OCSFAuditFormatter, OCSFAuditEvent, attach_audit_hash
 
 
 @dataclass
@@ -238,6 +245,21 @@ class OpenShellExecutor:
         
         # Attach policy profile to result
         result.policy_profile = policy
+        
+        # Generate OCSF audit event and attach audit hash
+        ocsf_event = OCSFAuditFormatter.format_sandbox_event(
+            event_type="sandbox_execute",
+            agent_id=task_packet.agent_id,
+            sandbox_id=sandbox_id,
+            policy_profile=policy,
+            success=result.success,
+            details={
+                "exit_code": result.exit_code,
+                "duration_ms": result.duration_ms,
+                "output_length": len(result.output) if result.output else 0
+            }
+        )
+        attach_audit_hash(result, ocsf_event)
         
         return result
     

@@ -1,0 +1,74 @@
+# Web Search Policy - Phase B Trial
+# Network-enabled search with restricted egress
+
+apiVersion: openshell.nvidia.com/v1alpha1
+kind: SandboxPolicy
+metadata:
+  name: web_search
+  description: "Network-enabled web search with restricted egress"
+spec:
+  runtime:
+    type: container
+    image: python:3.11-slim
+  
+  isolation:
+    filesystem:
+      mode: "read-only"
+      allowedPaths:
+        - path: /tmp
+          permissions: ["read", "write"]
+        - path: /usr/local/lib/python3.11
+          permissions: ["read"]
+      deniedPaths:
+        - path: /etc
+          permissions: ["all"]
+        - path: /root
+          permissions: ["all"]
+        - path: /home
+          permissions: ["all"]
+    
+    network:
+      enabled: true
+      egress:
+        - domain: "api.cloudflare.com"
+          ports: [443]
+        - domain: "search.example.com"
+          ports: [443]
+      ingress: []
+    
+    processes:
+      maxProcesses: 2
+      allowedExecutables:
+        - python3
+        - curl
+        - wget
+    
+    resources:
+      memoryLimit: 512Mi
+      cpuLimit: 0.5
+      timeoutSeconds: 60
+  
+  environment:
+    stripKeys:
+      - AWS_SECRET_KEY
+      - GITHUB_TOKEN
+      - OPENAI_API_KEY
+      - ANTHROPIC_API_KEY
+    injectKeys:
+      - NEXUS_AGENT_ID
+      - NEXUS_TASK_ACTION
+  
+  security:
+    seccompProfile: RuntimeDefault
+    apparmorProfile: RuntimeDefault
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  
+  auditing:
+    enabled: true
+    logStdout: true
+    logStderr: true
+    logFileAccess: true
+    format: ocsf
