@@ -289,7 +289,7 @@ scripts/run_tests.sh
 
 ## Automated Validation Steps
 
-### Validation Script: `validate_deployment.py`
+### Validation Scripts
 
 ```python
 #!/usr/bin/env python3
@@ -428,10 +428,10 @@ if __name__ == "__main__":
 
 ```bash
 # Initial deployment validation
-python scripts/validate_deployment.py
+scripts/run_tests.sh
 
 # Continuous health check (every 5 minutes)
-*/5 * * * * cd /path/to/rig && python scripts/validate_deployment.py || echo "Validation failed" | mail -s "Rig Health Alert" admin@example.com
+*/5 * * * * cd /path/to/rig && scripts/run_tests.sh || echo "Validation failed" | mail -s "Rig Health Alert" admin@example.com
 
 # Integration test suite
 scripts/run_tests.sh
