@@ -32,7 +32,7 @@ specs:
 # Create the Rig directory structure
 RIG_ID="<rig-id-uuid>"
 TOWN_ID="<town-id-uuid>"
-RIG_HOME="$HOME/.gastown/rigs/${RIG_ID}"
+RIG_HOME="$HOME/.hermes/rigs/${RIG_ID}"
 
 mkdir -p "${RIG_HOME}"/{worktrees,locks,logs,data,config}
 
@@ -70,8 +70,16 @@ RIG_NAME=<rig-name>
 # === API Keys ===
 HERMES_API_KEY=<hermes-api-key>
 OPENAI_API_KEY=<openai-key>  # or ANTHROPIC_API_KEY, etc.
-ZILLIZ_API_KEY=<zilliz-api-key>
-ZILLIZ_CLUSTER_ID=<zilliz-cluster-id>
+ZILLIZ_SERVERLESS_URI=<zilliz-serverless-uri>  # e.g., https://xxx.api.gcp-us-west1.zillizcloud.com
+ZILLIZ_SERVERLESS_TOKEN=<zilliz-serverless-token>
+
+# Alternative Zilliz configurations (uncomment as needed):
+# ZILLIZ_TOWN_URI=<town-specific-uri>
+# ZILLIZ_TOWN_TOKEN=<town-specific-token>
+# ZILLIZ_HOT_URI=<hot-storage-uri>
+# ZILLIZ_HOT_TOKEN=<hot-storage-token>
+# ZILLIZ_COLD_URI=<cold-storage-uri>
+# ZILLIZ_COLD_TOKEN=<cold-storage-token>
 
 # === GitHub Access ===
 GITHUB_TOKEN=<github-token>
@@ -111,7 +119,7 @@ LOG_DIR=${RIG_HOME}/logs
 
 ```bash
 # Clone or update the repository
-RIG_HOME="$HOME/.gastown/rigs/<rig-id-uuid>"
+RIG_HOME="$HOME/.hermes/rigs/<rig-id-uuid>"
 REPO_URL="<git-repository-url>"
 
 # Initial clone
@@ -134,7 +142,7 @@ For each Polecat agent in the Rig:
 #!/bin/bash
 # init_agent_worktree.sh - Initialize worktree for an agent
 
-RIG_HOME="$HOME/.gastown/rigs/<rig-id-uuid>"
+RIG_HOME="$HOME/.hermes/rigs/<rig-id-uuid>"
 AGENT_NAME="<agent-name>"  # e.g., "sage", "clover"
 BEAD_ID="<bead-id>"  # Current bead assigned, or "none" if idle
 AGENT_BRANCH="gt__${AGENT_NAME}__${BEAD_ID}"
@@ -285,11 +293,9 @@ echo "✓ Agent worktrees initialized"
 
 # Step 6: Validate deployment
 echo "[6/6] Running validation..."
-if [ -f "${RIG_HOME}/repo/scripts/validate_deployment.py" ]; then
-    cd "${RIG_HOME}/repo"
-    source .venv/bin/activate
-    python scripts/validate_deployment.py
-fi
+cd "${RIG_HOME}/repo"
+source .venv/bin/activate
+scripts/run_tests.sh
 echo "✓ Validation complete"
 
 echo ""
@@ -307,22 +313,22 @@ After initialization, verify:
 
 ```bash
 # Basic checks
-[ -d "$HOME/.gastown/rigs/<rig-id>" ] && echo "✓ Rig directory exists"
-[ -f "$HOME/.gastown/rigs/<rig-id>/.env" ] && echo "✓ Environment configured"
-[ -d "$HOME/.gastown/rigs/<rig-id>/repo/.git" ] && echo "✓ Repository cloned"
-[ -d "$HOME/.gastown/rigs/<rig-id>/browse" ] && echo "✓ Browse worktree created"
+[ -d "$HOME/.hermes/rigs/<rig-id>" ] && echo "✓ Rig directory exists"
+[ -f "$HOME/.hermes/rigs/<rig-id>/.env" ] && echo "✓ Environment configured"
+[ -d "$HOME/.hermes/rigs/<rig-id>/repo/.git" ] && echo "✓ Repository cloned"
+[ -d "$HOME/.hermes/rigs/<rig-id>/browse" ] && echo "✓ Browse worktree created"
 
 # Agent checks
-[ -d "$HOME/.gastown/rigs/<rig-id>/worktrees" ] && echo "✓ Worktrees directory exists"
+[ -d "$HOME/.hermes/rigs/<rig-id>/worktrees" ] && echo "✓ Worktrees directory exists"
 # Check each agent worktree
 for agent in sage clover maple; do
-  if [ -d "$HOME/.gastown/rigs/<rig-id>/worktrees/gt__${agent}__*" ]; then
+  if [ -d "$HOME/.hermes/rigs/<rig-id>/worktrees/gt__${agent}__*" ]; then
     echo "✓ Agent ${agent} worktree exists"
   fi
 done
 
 # Connectivity checks
-cd $HOME/.gastown/rigs/<rig-id>/repo
+cd $HOME/.hermes/rigs/<rig-id>/repo
 source .venv/bin/activate
 
 # Test Zilliz
@@ -342,28 +348,31 @@ print('✓ Model API accessible')
 "
 
 # Run full validation
-python scripts/validate_deployment.py
+scripts/run_tests.sh
 ```
 
 ## Quick Start Commands
 
 ```bash
 # Start all agents in the Rig
-cd $HOME/.gastown/rigs/<rig-id>
-./start_agents.sh
+cd $HOME/.hermes/rigs/<rig-id>/repo
+source .venv/bin/activate
+python run_agent.py  # Repeat for each agent worktree
 
 # Check Rig status
-./check_rig_status.sh
+gt_status  # Inside agent session, or check logs
 
 # View agent logs
-tail -f logs/sage.log
-tail -f logs/clover.log
+tail -f ~/.hermes/logs/sage.log
+tail -f ~/.hermes/logs/clover.log
 
 # Stop all agents
-./stop_agents.sh
+# Use gt_stop or kill agent processes
 
 # Update repository and all worktrees
-./update_rig.sh
+cd $HOME/.hermes/rigs/<rig-id>/repo
+git fetch origin && git reset --hard origin/main
+# Recreate worktrees as needed
 ```
 
 ## Troubleshooting
@@ -371,16 +380,16 @@ tail -f logs/clover.log
 ### Worktree Already Exists
 ```bash
 # List existing worktrees
-git -C $HOME/.gastown/rigs/<rig-id>/repo worktree list
+git -C $HOME/.hermes/rigs/<rig-id>/repo worktree list
 
 # Remove stale worktree
-git -C $HOME/.gastown/rigs/<rig-id>/repo worktree remove $HOME/.gastown/rigs/<rig-id>/worktrees/gt__<agent>__<bead> --force
+git -C $HOME/.hermes/rigs/<rig-id>/repo worktree remove $HOME/.hermes/rigs/<rig-id>/worktrees/gt__<agent>__<bead> --force
 ```
 
 ### Python Environment Issues
 ```bash
 # Recreate virtual environment
-cd $HOME/.gastown/rigs/<rig-id>/repo
+cd $HOME/.hermes/rigs/<rig-id>/repo
 rm -rf .venv
 python3 -m venv .venv
 source .venv/bin/activate
@@ -390,13 +399,13 @@ pip install -e ".[all,dev]"
 ### Agent Fails to Start
 ```bash
 # Check agent lock
-ls -la $HOME/.gastown/rigs/<rig-id>/locks/
+ls -la $HOME/.hermes/rigs/<rig-id>/locks/
 
 # Remove stale lock
-rm -f $HOME/.gastown/rigs/<rig-id>/locks/<agent>.lock
+rm -f $HOME/.hermes/rigs/<rig-id>/locks/<agent>.lock
 
 # Check agent logs
-cat $HOME/.gastown/rigs/<rig-id>/logs/<agent>.log
+cat $HOME/.hermes/rigs/<rig-id>/logs/<agent>.log
 ```
 
 ## Next Steps

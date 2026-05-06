@@ -32,8 +32,8 @@ Town (3bb00369-82cf-45ab-94af-3eac43516d9d)
 
 ### Required Credentials
 - `HERMES_API_KEY` - Primary API authentication
-- `ZILLIZ_CLUSTER_ID` - Vector database cluster
-- `ZILLIZ_API_KEY` - Vector database access
+- `ZILLIZ_SERVERLESS_URI` - Vector database cluster
+- `ZILLIZ_SERVERLESS_TOKEN` - Vector database access
 - `OPENAI_API_KEY` or equivalent model provider key
 - `GITHUB_TOKEN` - For repository access (if private)
 
@@ -45,8 +45,8 @@ Create a new Town to serve as the coordination hub:
 
 ```bash
 # Initialize town configuration
-mkdir -p ~/.gastown/towns/<town-id>
-cd ~/.gastown/towns/<town-id>
+mkdir -p ~/.hermes/towns/<town-id>
+cd ~/.hermes/towns/<town-id>
 
 # Create town configuration
 cat > town-config.yaml <<EOF
@@ -58,7 +58,7 @@ town:
   
 infrastructure:
   zilliz:
-    cluster_id: ${ZILLIZ_CLUSTER_ID}
+    cluster_id: ${ZILLIZ_SERVERLESS_URI}
     collections:
       - nexus_events
       - nexus_governance
@@ -79,11 +79,11 @@ Deploy a Rig within the Town:
 
 ```bash
 # Clone the rig repository
-git clone <repository-url> ~/.gastown/rigs/<rig-id>
-cd ~/.gastown/rigs/<rig-id>
+git clone <repository-url> ~/.hermes/rigs/<rig-id>
+cd ~/.hermes/rigs/<rig-id>
 
 # Initialize worktree for agent
-git worktree add worktrees/<agent-name> -b <agent-name>/main
+git worktree add worktrees/gt__<agent-name>__<bead-id> -b gt__<agent-name>__<bead-id>
 
 # Create environment configuration
 cp .env.example .env
@@ -123,14 +123,11 @@ EOF
 Run the deployment verification script:
 
 ```bash
-# Validate rig initialization
-python scripts/validate_rig.py --rig-id <rig-id> --town-id <town-id>
+# Validate rig setup and run tests
+scripts/run_tests.sh
 
-# Check agent connectivity
-python scripts/check_agents.py --town <town-id>
-
-# Verify Zilliz connection
-python scripts/test_zilliz.py --cluster ${ZILLIZ_CLUSTER_ID}
+# Verify Zilliz connection (use Python client directly)
+# Example: python -c "from pymilvus import connections; connections.connect(uri=os.getenv('ZILLIZ_SERVERLESS_URI'), token=os.getenv('ZILLIZ_SERVERLESS_TOKEN'))"
 ```
 
 ## Troubleshooting Scenarios
@@ -150,16 +147,16 @@ python scripts/test_zilliz.py --cluster ${ZILLIZ_CLUSTER_ID}
 **Resolution:**
 ```bash
 # Check for stale locks
-ls -la ~/.gastown/rigs/<rig-id>/locks/
+ls -la ~/.hermes/rigs/<rig-id>/locks/
 
 # Remove stale lock if agent is not running
-rm -f ~/.gastown/rigs/<rig-id>/locks/<agent-name>.lock
+rm -f ~/.hermes/rigs/<rig-id>/locks/<agent-name>.lock
 
 # Verify environment
 source .env && env | grep -E "(HERMES_|ZILLIZ_|OPENAI_)"
 
 # Fix permissions
-chmod -R u+w ~/.gastown/rigs/<rig-id>/worktrees/<agent-name>/
+chmod -R u+w ~/.hermes/rigs/<rig-id>/worktrees/gt__<agent-name>__<bead-id>/
 ```
 
 ### Scenario 2: Zilliz Connection Failures
@@ -177,19 +174,20 @@ chmod -R u+w ~/.gastown/rigs/<rig-id>/worktrees/<agent-name>/
 **Resolution:**
 ```bash
 # Test connectivity
-curl -X GET "https://${ZILLIZ_CLUSTER_ID}.zillizcloud.com/v1/health" \
-  -H "Authorization: Bearer ${ZILLIZ_API_KEY}"
+curl -X GET "${ZILLIZ_SERVERLESS_URI}/v1/health" \
+  -H "Authorization: Bearer ${ZILLIZ_SERVERLESS_TOKEN}"
 
 # Verify collections exist
 python -c "
+import os
 from pymilvus import connections, has_collection
-connections.connect(host='...', port='...')
+connections.connect(
+    uri=os.getenv('ZILLIZ_SERVERLESS_URI'),
+    token=os.getenv('ZILLIZ_SERVERLESS_TOKEN')
+)
 print('nexus_events:', has_collection('nexus_events'))
 print('nexus_governance:', has_collection('nexus_governance'))
 "
-
-# Reinitialize collections if missing
-python scripts/init_zilliz_collections.py --force
 ```
 
 ### Scenario 3: Bead Dispatch Failures
@@ -211,14 +209,8 @@ gt_status  # If inside agent session
 # Or query via API
 curl http://localhost:8080/api/rigs/<rig-id>/agents/status
 
-# Manually dispatch bead to specific agent
-python scripts/dispatch_bead.py \
-  --bead-id <bead-id> \
-  --agent-id <agent-id> \
-  --priority high
-
-# Scale rig capacity (add more agents)
-python scripts/scale_rig.py --rig-id <rig-id> --agents +2
+# Use Gastown CLI tools to dispatch beads and manage rig capacity
+# gt_dispatch, gt_scale, etc.
 ```
 
 ### Scenario 4: Git Worktree Corruption
@@ -236,14 +228,14 @@ python scripts/scale_rig.py --rig-id <rig-id> --agents +2
 **Resolution:**
 ```bash
 # Remove corrupted worktree
-git worktree remove worktrees/<agent-name> --force
+git worktree remove worktrees/gt__<agent-name>__<bead-id> --force
 
 # Recreate worktree from latest main
 git fetch origin
-git worktree add worktrees/<agent-name> -b <agent-name>/main origin/main
+git worktree add worktrees/gt__<agent-name>__<bead-id> -b gt__<agent-name>__<bead-id> origin/main
 
 # If branch conflicts, create fresh
-git worktree add worktrees/<agent-name> -b <agent-name>/main-$(date +%s)
+git worktree add worktrees/gt__<agent-name>__<bead-id> -b gt__<agent-name>__<bead-id>-$(date +%s)
 ```
 
 ### Scenario 5: KAIJU Governance Pipeline Errors
@@ -260,17 +252,13 @@ git worktree add worktrees/<agent-name> -b <agent-name>/main-$(date +%s)
 
 **Resolution:**
 ```bash
-# Check KAIJU status
-python scripts/kaiju_status.py --rig <rig-id>
+# Check KAIJU status via Gastown CLI or API
+# Use hermes CLI commands to manage KAIJU governance
 
-# Verify VAP chain
-python scripts/verify_vap_chain.py --town <town-id>
+# Verify VAP chain and policies using existing tools
+scripts/run_tests.sh
 
-# Reload policy templates
-python scripts/reload_policies.py --source nexus-swarm-pack/policies/
-
-# Restart KAIJU governance
-python scripts/kaiju_restart.py --graceful
+# Restart KAIJU governance via systemd/docker or platform tools
 ```
 
 ## Success Metrics
@@ -346,8 +334,8 @@ class DeploymentValidator:
         """Validate required environment variables."""
         required_vars = [
             'HERMES_API_KEY',
-            'ZILLIZ_CLUSTER_ID',
-            'ZILLIZ_API_KEY',
+            'ZILLIZ_SERVERLESS_URI',
+            'ZILLIZ_SERVERLESS_TOKEN',
         ]
         for var in required_vars:
             if not os.getenv(var):
@@ -387,8 +375,8 @@ class DeploymentValidator:
         try:
             from pymilvus import connections
             connections.connect(
-                host=os.getenv('ZILLIZ_CLUSTER_ID'),
-                port=19530
+                uri=os.getenv('ZILLIZ_SERVERLESS_URI'),
+                token=os.getenv('ZILLIZ_SERVERLESS_TOKEN')
             )
         except Exception as e:
             self.errors.append(f"Zilliz connection failed: {str(e)}")
@@ -400,7 +388,7 @@ class DeploymentValidator:
     
     def validate_rig_health(self):
         """Check rig health via status endpoint."""
-        rig_status_file = f"~/.gastown/rigs/{self.rig_id}/status.json"
+        rig_status_file = f"~/.hermes/rigs/{self.rig_id}/status.json"
         if not os.path.exists(os.path.expanduser(rig_status_file)):
             self.warnings.append("Rig status file not found")
     
@@ -446,7 +434,7 @@ python scripts/validate_deployment.py
 */5 * * * * cd /path/to/rig && python scripts/validate_deployment.py || echo "Validation failed" | mail -s "Rig Health Alert" admin@example.com
 
 # Integration test suite
-scripts/run_tests.sh tests/gastown/
+scripts/run_tests.sh
 ```
 
 ## Security Considerations

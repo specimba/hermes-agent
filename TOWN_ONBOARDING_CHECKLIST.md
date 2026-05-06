@@ -13,8 +13,10 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
 
 ### Credential Preparation
 - [ ] Generate `HERMES_API_KEY` for authentication
-- [ ] Provision Zilliz cluster and note `ZILLIZ_CLUSTER_ID`
-- [ ] Generate `ZILLIZ_API_KEY` for vector database access
+- [ ] Provision Zilliz cluster and note connection details:
+  - `ZILLIZ_SERVERLESS_URI` + `ZILLIZ_SERVERLESS_TOKEN` (Serverless)
+  - Or `ZILLIZ_TOWN_URI` + `ZILLIZ_TOWN_TOKEN` (Town-specific)
+  - Or `ZILLIZ_HOT_URI` + `ZILLIZ_HOT_TOKEN` + `ZILLIZ_COLD_URI` + `ZILLIZ_COLD_TOKEN` (Hot/Cold storage)
 - [ ] Obtain model provider API key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, etc.)
 - [ ] Create GitHub personal access token (`GITHUB_TOKEN`) with repo scope
 - [ ] Document all credentials in secure password manager
@@ -54,15 +56,15 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
   }
   ```
 - [ ] Verify collections are accessible with API key
-- [ ] Run connectivity test: `python scripts/test_zilliz.py`
+- [ ] Run connectivity test: `python -c "from pymilvus import connections; connections.connect(uri=os.getenv('ZILLIZ_SERVERLESS_URI'), token=os.getenv('ZILLIZ_SERVERLESS_TOKEN'))"`
 
 ### KAIJU Governance Setup
 - [ ] Enable KAIJU governance pipeline in town config
 - [ ] Configure VAP (Verification, Approval, Publishing) audit settings
 - [ ] Load policy templates from `nexus-swarm-pack/policies/`
-- [ ] Verify policy template loading: `python scripts/verify_policies.py`
+- [ ] Verify policy template loading: Check `nexus-swarm-pack/policies/` exists
 - [ ] Test proposal generation with sample bead
-- [ ] Validate VAP chain integrity: `python scripts/verify_vap_chain.py`
+- [ ] Validate VAP chain integrity: Use KAIJU governance tools
 
 ### OpenShell Gateway Configuration
 - [ ] Enable OpenShell gateway in town config
@@ -81,8 +83,8 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
   - [ ] Git
   - [ ] Docker (if using containerized deployment)
   - [ ] `uv` package manager: `curl -LsSf https://astral.sh/uv/install.sh | sh`
-- [ ] Clone repository: `git clone <repo-url> ~/.gastown/rigs/<rig-id>`
-- [ ] Create Python virtual environment: `uv venv ~/.gastown/rigs/<rig-id>/venv --python 3.11`
+- [ ] Clone repository: `git clone <repo-url> ~/.hermes/rigs/<rig-id>`
+- [ ] Create Python virtual environment: `uv venv ~/.hermes/rigs/<rig-id>/venv --python 3.11`
 - [ ] Install dependencies: `source venv/bin/activate && uv pip install -e ".[all,dev]"`
 
 ### Rig Configuration
@@ -90,8 +92,8 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
 - [ ] Populate `.env` with all required credentials:
   ```bash
   HERMES_API_KEY=<your-key>
-  ZILLIZ_CLUSTER_ID=<your-cluster>
-  ZILLIZ_API_KEY=<your-zilliz-key>
+  ZILLIZ_SERVERLESS_URI=<your-cluster>
+  ZILLIZ_SERVERLESS_TOKEN=<your-zilliz-key>
   OPENAI_API_KEY=<your-openai-key>
   GITHUB_TOKEN=<your-github-token>
   TOWN_ID=<town-id>
@@ -106,7 +108,7 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
 ### For Each Polecat Agent (repeat for each):
 - [ ] Generate Agent UUID: `python -c "import uuid; print(uuid.uuid4())"`
 - [ ] Choose agent name (e.g., "Sage", "Clover", "Maple")
-- [ ] Create worktree: `git worktree add worktrees/<agent-name> -b <agent-name>/main`
+- [ ] Create worktree: `git worktree add worktrees/gt__<agent-name>__<bead-id> -b gt__<agent-name>__<bead-id>`
 - [ ] Create agent config: `.kilo/agent/<agent-name>.md`
 - [ ] Configure agent capabilities:
   - [ ] Toolsets to enable/disable
@@ -157,7 +159,7 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
 ## Phase 5: Security & Compliance
 
 ### Security Hardening
-- [ ] Run security scan: `python scripts/security_scan.py`
+- [ ] Run security scan: Use `scripts/run_tests.sh` or dependency checkers (e.g., `pip audit`)
 - [ ] Review and address all HIGH/CRITICAL vulnerabilities
 - [ ] Verify API keys stored securely (not in repo, use env vars or secret manager)
 - [ ] Enable audit logging for all agent actions
@@ -222,7 +224,7 @@ Use this checklist when setting up a new Town in the Gastown multi-agent system.
 
 ### Final Validation
 - [ ] Run full test suite: `scripts/run_tests.sh`
-- [ ] Run deployment validation: `python scripts/validate_deployment.py`
+- [ ] Run deployment validation: `scripts/run_tests.sh`
 - [ ] Verify all success metrics from NEXUS_TOWN_DEPLOYMENT_KIT.md are met
 - [ ] Complete security scan with zero HIGH/CRITICAL issues
 
