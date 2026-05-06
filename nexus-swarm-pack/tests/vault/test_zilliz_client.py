@@ -243,5 +243,145 @@ class TestHealthCheck:
             assert status["clusters"]["serverless"]["collections"] == 2
 
 
+class TestCollectionName:
+    """Test collection name generation."""
+    
+    def test_event_collection_name(self):
+        """Test EVENT track collection name."""
+        client = ZillizClient()
+        name = client._get_collection_name("EVENT")
+        assert name == "nexus_event"
+    
+    def test_trust_collection_name(self):
+        """Test TRUST track collection name."""
+        client = ZillizClient()
+        name = client._get_collection_name("TRUST")
+        assert name == "nexus_trust"
+    
+    def test_governance_collection_name(self):
+        """Test GOVERNANCE track collection name."""
+        client = ZillizClient()
+        name = client._get_collection_name("GOVERNANCE")
+        assert name == "nexus_governance"
+
+
+class TestEnsureCollection:
+    """Test collection creation and management."""
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_skip_when_unavailable(self, mock_milvus):
+        """Test ensure_collection does nothing when client unavailable."""
+        with patch.dict(os.environ, {}, clear=True):
+            client = ZillizClient()
+            asyncio.run(client.ensure_collection("EVENT"))
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_existing_collection(self, mock_milvus):
+        """Test ensure_collection skips if collection already exists."""
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+        mock_milvus.return_value = mock_client
+        
+        with patch.dict(os.environ, {
+            "ZILLIZ_SERVERLESS_URI": "https://test.com",
+            "ZILLIZ_SERVERLESS_TOKEN": "token"
+        }):
+            client = ZillizClient()
+            asyncio.run(client.ensure_collection("EVENT"))
+            mock_client.create_collection.assert_not_called()
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_create_new_collection(self, mock_milvus):
+        """Test ensure_collection creates collection if not exists."""
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = False
+        mock_milvus.return_value = mock_client
+        
+        with patch.dict(os.environ, {
+            "ZILLIZ_SERVERLESS_URI": "https://test.com",
+            "ZILLIZ_SERVERLESS_TOKEN": "token"
+        }):
+            client = ZillizClient()
+            asyncio.run(client.ensure_collection("EVENT", dimension=512))
+            mock_client.create_collection.assert_called_once()
+
+
+class TestStoreEmbedding:
+    """Test embedding storage functionality."""
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_skip_when_unavailable(self, mock_milvus):
+        """Test store_embedding skips when client unavailable."""
+        with patch.dict(os.environ, {}, clear=True):
+            client = ZillizClient()
+            asyncio.run(client.store_embedding(
+                "agent1", "lane1", "EVENT", "key1", "val1", [0.1]
+            ))
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_store_success(self, mock_milvus):
+        """Test successful embedding storage."""
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+        mock_milvus.return_value = mock_client
+        
+        with patch.dict(os.environ, {
+            "ZILLIZ_SERVERLESS_URI": "https://test.com",
+            "ZILLIZ_SERVERLESS_TOKEN": "token"
+        }):
+            client = ZillizClient()
+            asyncio.run(client.store_embedding(
+                agent_id="agent1",
+                lane="impl",
+                track_type="EVENT",
+                key="test_key",
+                value="test_value",
+                embedding=[0.1, 0.2, 0.3],
+                metadata={"foo": "bar"}
+            ))
+            mock_client.insert.assert_called_once()
+            call_args = mock_client.insert.call_args
+            assert call_args[1]["collection_name"] == "nexus_event"
+            assert len(call_args[1]["data"]) == 1
+
+
+class TestSimilarSearch:
+    """Test similarity search functionality."""
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_return_empty_when_unavailable(self, mock_milvus):
+        """Test similar_search returns empty list when unavailable."""
+        with patch.dict(os.environ, {}, clear=True):
+            client = ZillizClient()
+            results = asyncio.run(client.similar_search([0.1, 0.2]))
+            assert results == []
+    
+    @patch('src.nexus_os.vault.zilliz_client.MilvusClient')
+    def test_search_with_track_type(self, mock_milvus):
+        """Test search filtered by track type."""
+        mock_client = MagicMock()
+        mock_client.has_collection.return_value = True
+        mock_hit = MagicMock()
+        mock_hit.entity.get.return_value = {"agent_id": "agent1"}
+        mock_hit.entity.id = "hit1"
+        mock_hit.distance = 0.5
+        mock_client.search.return_value = [[mock_hit]]
+        mock_milvus.return_value = mock_client
+        
+        with patch.dict(os.environ, {
+            "ZILLIZ_SERVERLESS_URI": "https://test.com",
+            "ZILLIZ_SERVERLESS_TOKEN": "token"
+        }):
+            client = ZillizClient()
+            results = asyncio.run(client.similar_search(
+                query_embedding=[0.1],
+                track_type="EVENT",
+                top_k=3
+            ))
+            assert len(results) == 1
+            assert results[0]["id"] == "hit1"
+            mock_client.search.assert_called_once()
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
