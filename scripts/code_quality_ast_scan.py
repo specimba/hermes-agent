@@ -14,10 +14,11 @@ from typing import List, Dict, Any, Optional
 class FunctionQualityVisitor(ast.NodeVisitor):
     """AST visitor to collect function/method quality metrics."""
 
-    def __init__(self, file_path: str):
-        self.file_path = file_path
+    def __init__(self, file_path: str, repo_root: Path):
+        self.file_path = Path(file_path).relative_to(repo_root).as_posix()
         self.functions: List[Dict[str, Any]] = []
         self._current_class: Optional[str] = None
+        self.imports: Dict[str, Any] = {}  # Track imported names: alias -> module or (module, name)
 
     def visit_ClassDef(self, node: ast.ClassDef):
         """Enter class context to track method ownership."""
@@ -34,6 +35,22 @@ class FunctionQualityVisitor(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef):
         """Process asynchronous function definitions."""
         self._process_function(node)
+        self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import):
+        """Track import statements and their aliases."""
+        for alias in node.names:
+            key = alias.asname if alias.asname else alias.name
+            self.imports[key] = alias.name
+        self.generic_visit(node)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom):
+        """Track from-import statements and their aliases."""
+        if node.module is None:
+            return
+        for alias in node.names:
+            key = alias.asname if alias.asname else alias.name
+            self.imports[key] = (node.module, alias.name)
         self.generic_visit(node)
 
     def _process_function(self, node: ast.AST) -> None:
@@ -71,8 +88,17 @@ class FunctionQualityVisitor(ast.NodeVisitor):
         
         for child in ast.walk(node):
             # Decision points that increase complexity
-            if isinstance(child, (ast.If, ast.For, ast.While, ast.Try, ast.With)):
+            if isinstance(child, (ast.If,)):
                 complexity += 1
+            elif isinstance(child, (ast.For, ast.AsyncFor)):
+                complexity += 1
+            elif isinstance(child, ast.While):
+                complexity += 1
+            elif isinstance(child, (ast.With, ast.AsyncWith)):
+                complexity += 1
+            elif isinstance(child, ast.Try):
+                # Each except handler is a decision point
+                complexity += len(child.handlers)
             elif isinstance(child, ast.BoolOp):
                 # Each additional boolean operand adds a decision point
                 complexity += len(child.values) - 1
@@ -95,28 +121,60 @@ class FunctionQualityVisitor(ast.NodeVisitor):
         else:
             return "high"
 
+    def _resolve_call(self, func_node: ast.AST) -> Optional[tuple]:
+        """Resolve a function call node to (module, function_name) if possible."""
+        if isinstance(func_node, ast.Name):
+            name = func_node.id
+            if name in ("eval", "exec"):
+                return (None, name)
+            if name in self.imports:
+                imported = self.imports[name]
+                if isinstance(imported, tuple):
+                    return (imported[0], imported[1])
+            return None
+        elif isinstance(func_node, ast.Attribute):
+            if not isinstance(func_node.value, ast.Name):
+                return None
+            module_alias = func_node.value.id
+            func_name = func_node.attr
+            if module_alias in self.imports:
+                imported = self.imports[module_alias]
+                if isinstance(imported, str):
+                    return (imported, func_name)
+            return (module_alias, func_name)
+        return None
+
     def _check_security_patterns(self, node: ast.AST) -> List[str]:
         """Detect common security anti-patterns in function AST."""
         issues = []
         
         for child in ast.walk(node):
-            # Check for eval/exec usage
-            if isinstance(child, ast.Call):
-                if isinstance(child.func, ast.Name) and child.func.id in ("eval", "exec"):
-                    issues.append(f"uses {child.func.id}()")
-                # Check for os.system
-                elif isinstance(child.func, ast.Attribute) and isinstance(child.func.value, ast.Name):
-                    if child.func.value.id == "os" and child.func.attr == "system":
-                        issues.append("uses os.system()")
-                    # Check for subprocess with shell=True
-                    elif child.func.value.id == "subprocess" and child.func.attr in ("call", "run", "Popen"):
-                        for keyword in child.keywords:
-                            if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
-                                issues.append(f"subprocess.{child.func.attr}() with shell=True")
-                # Check for pickle usage
-                elif isinstance(child.func, ast.Attribute) and isinstance(child.func.value, ast.Name) and child.func.value.id == "pickle":
-                    if child.func.attr in ("load", "loads"):
-                        issues.append("uses pickle.load/loads (insecure deserialization)")
+            if not isinstance(child, ast.Call):
+                continue
+            
+            func_info = self._resolve_call(child.func)
+            if func_info is None:
+                continue
+            
+            module, func_name = func_info
+            
+            # Check eval/exec
+            if module is None and func_name in ("eval", "exec"):
+                issues.append(f"uses {func_name}()")
+            
+            # Check os.system
+            if module == "os" and func_name == "system":
+                issues.append("uses os.system()")
+            
+            # Check subprocess with shell=True
+            if module == "subprocess" and func_name in ("call", "run", "Popen"):
+                for keyword in child.keywords:
+                    if keyword.arg == "shell" and isinstance(keyword.value, ast.Constant) and keyword.value.value is True:
+                        issues.append(f"subprocess.{func_name}() with shell=True")
+            
+            # Check pickle usage
+            if module == "pickle" and func_name in ("load", "loads"):
+                issues.append("uses pickle.load/loads (insecure deserialization)")
         
         return list(set(issues))  # Deduplicate
 
@@ -137,31 +195,33 @@ class FunctionQualityVisitor(ast.NodeVisitor):
         return score
 
 
-def scan_file(file_path: str) -> List[Dict[str, Any]]:
+def scan_file(file_path: str, repo_root: Path) -> List[Dict[str, Any]]:
     """Scan a single Python file and return function metrics."""
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             source = f.read()
         tree = ast.parse(source, filename=file_path)
-        visitor = FunctionQualityVisitor(file_path)
+        visitor = FunctionQualityVisitor(file_path, repo_root)
         visitor.visit(tree)
         return visitor.functions
     except SyntaxError as e:
         print(f"Syntax error in {file_path}: {e}", file=sys.stderr)
         return []
     except Exception as e:
+        import traceback
         print(f"Error scanning {file_path}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         return []
 
 
-def generate_report(target_files: List[str], output_path: str) -> Dict[str, Any]:
+def generate_report(target_files: List[str], output_path: str, repo_root: Path) -> Dict[str, Any]:
     """Generate full quality report for target files."""
     all_functions = []
     for file_path in target_files:
         if not os.path.exists(file_path):
             print(f"Warning: Target file not found: {file_path}", file=sys.stderr)
             continue
-        all_functions.extend(scan_file(file_path))
+        all_functions.extend(scan_file(file_path, repo_root))
     
     # Calculate summary statistics
     total_functions = len(all_functions)
@@ -191,7 +251,7 @@ def generate_report(target_files: List[str], output_path: str) -> Dict[str, Any]
     
     report = {
         "metadata": {
-            "scan_targets": target_files,
+            "scan_targets": [Path(f).relative_to(repo_root).as_posix() for f in target_files],
             "total_functions_scanned": total_functions,
             "total_missing_docstrings": total_missing,
             "scan_tool": "code_quality_ast_scan.py (Phase A1 baseline)"
@@ -234,7 +294,7 @@ if __name__ == "__main__":
     OUTPUT_PATH = REPO_ROOT / "code_quality_report.json"
     
     print(f"Scanning {len(TARGET_FILES)} target files...")
-    report = generate_report(TARGET_FILES, str(OUTPUT_PATH))
+    report = generate_report(TARGET_FILES, str(OUTPUT_PATH), REPO_ROOT)
     
     print(f"Scan complete. Report written to {OUTPUT_PATH}")
     print(f"Total functions scanned: {report['metadata']['total_functions_scanned']}")
