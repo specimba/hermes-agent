@@ -89,6 +89,9 @@ AUTHOR_MAP = {
     "probepark@users.noreply.github.com": "probepark",
     # Slack batch salvage (May 2026)
     "280484231+prive-fe-bot@users.noreply.github.com": "priveperfumes",
+    # Gastown agents (May 2026)
+    "Birch@gastown.local": "birch",
+    "Maple@gastown.local": "maple",
     "amr@ghanem.sa": "amroessam",
     "paperlantern.agent@gmail.com": "Hinotoi-agent",
     "valda@underscore.jp": "valda",
