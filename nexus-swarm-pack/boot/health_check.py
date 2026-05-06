@@ -88,8 +88,8 @@ def check_runtimes():
         from runtimes.openshell_executor import OpenShellExecutor
         from runtimes import WorkerRegistry
         registry = WorkerRegistry.get_instance()
-        workers = registry.list_workers()
-        return True, f"Worker registry initialized with {len(workers)} workers"
+        runtimes = registry.list_runtimes()
+        return True, f"Worker registry initialized with {len(runtimes)} runtimes"
     except Exception as e:
         return False, f"Runtime registry error: {e}"
 
