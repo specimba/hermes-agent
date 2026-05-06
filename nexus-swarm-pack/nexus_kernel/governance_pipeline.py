@@ -3,17 +3,29 @@ KAIJU Governance Pipeline Automation
 
 Automated pipeline for processing governance decisions into code improvements.
 Handles docstring fixes, code quality improvements, and automatic PR generation.
+
+Workflow:
+1. Trigger Detection: Docstring gaps, code quality issues, or governance proposals
+2. KAIJU Evaluation: 5-stage gate evaluation with trust scoring
+3. Approval Threshold: Auto-approve, require review, or hard stop
+4. Change Application: Apply approved changes to target files
+5. PR Generation: Create GitHub PR with proper attribution
+6. VAP Audit: Log all actions to cryptographic audit chain
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, Dict, List, Any, Tuple
+from typing import Optional, Dict, List, Any, Tuple, Callable
 from enum import Enum
 import hashlib
 import json
+import os
+import subprocess
+from pathlib import Path
 
 from .kaiju import KAIJUGovernor, AgentProposal, GateDecision, TrustScore, ViolationType
 from .vap import VAPChain, VAPEntry
+from .docstring_fixer import DocstringFixer, DocstringIssue
 
 
 class PipelineTrigger(Enum):
