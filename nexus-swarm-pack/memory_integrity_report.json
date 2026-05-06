@@ -1,0 +1,37 @@
+{
+  "report_metadata": {
+    "generated_at": "2026-05-06T15:03:52.617949",
+    "report_type": "memory_layer_integrity",
+    "agent": "Flint",
+    "bead_id": "cb8947b8-dd77-44db-bd00-052bcdd96743"
+  },
+  "zilliz_status": {
+    "zilliz_available": false,
+    "clusters": {},
+    "collections_checked": {}
+  },
+  "vap_chain_status": {
+    "vap_chain": {
+      "integrity_valid": true,
+      "chain_length": 1,
+      "audit_summary": {
+        "total_entries": 1,
+        "chain_integrity": true,
+        "event_breakdown": {
+          "gate_decision": 1
+        },
+        "agent_activity": {
+          "verification_agent": 1
+        },
+        "violation_count": 1,
+        "genesis_hash": "d872f3a35679b31fc92710f0e65af9782ce25b78be7cca21651922b85d63dcfd",
+        "latest_hash": "01ae0bcac1252a00b99620ad47235e78766b61f08b2dd567e731236b85ec40dc"
+      }
+    }
+  },
+  "summary": {
+    "zilliz_healthy": false,
+    "vap_integrity_valid": true,
+    "total_entities": 0
+  }
+}

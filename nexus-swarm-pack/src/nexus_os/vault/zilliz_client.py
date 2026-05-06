@@ -401,3 +401,33 @@ class ZillizClient:
                 }
         
         return status
+
+    async def get_entity_count(self, track_type: str) -> int:
+        """
+        Get number of entities in the collection for a track type.
+        
+        Args:
+            track_type: Type of track (EVENT, GOVERNANCE, etc.)
+            
+        Returns:
+            Number of entities, or 0 if collection doesn't exist or error.
+        """
+        if not self._available:
+            return 0
+        
+        cluster_name = self._get_cluster_for_track(track_type)
+        if not cluster_name:
+            return 0
+        
+        collection_name = self._get_collection_name(track_type)
+        client = self._connections.get(cluster_name)
+        if not client:
+            return 0
+        
+        try:
+            if client.has_collection(collection_name):
+                return client.num_entities(collection_name)
+            return 0
+        except Exception as e:
+            logger.error(f"Failed to get entity count for {collection_name}: {e}")
+            return 0
