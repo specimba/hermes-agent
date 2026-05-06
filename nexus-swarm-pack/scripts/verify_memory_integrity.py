@@ -8,8 +8,9 @@ confirms VAP chain integrity via KAIJUGovernor, and generates a synchronization 
 
 import asyncio
 import json
+import os
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 
 # Add nexus-swarm-pack to path
@@ -33,6 +34,12 @@ async def verify_zilliz_clusters(zilliz: ZillizClient) -> Dict[str, Any]:
     
     if not health["available"]:
         print("❌ Zilliz not available")
+        # Check for missing environment variables
+        required_vars = ["ZILLIZ_SERVERLESS_URI", "ZILLIZ_SERVERLESS_TOKEN", "ZILLIZ_TOWN_URI", "ZILLIZ_TOWN_TOKEN"]
+        missing_vars = [var for var in required_vars if not os.getenv(var)]
+        if missing_vars:
+            report["missing_env_vars"] = missing_vars
+            print(f"  Missing env vars: {', '.join(missing_vars)}")
         return report
     
     # Check serverless cluster (nexus_events for EVENT track)
@@ -132,9 +139,9 @@ async def generate_report(
     
     full_report = {
         "report_metadata": {
-            "generated_at": datetime.utcnow().isoformat(),
+            "generated_at": datetime.now(timezone.utc).isoformat(),
             "report_type": "memory_layer_integrity",
-            "agent": "Flint",
+            "agent": "Toast",
             "bead_id": "cb8947b8-dd77-44db-bd00-052bcdd96743"
         },
         "zilliz_status": zilliz_report,
