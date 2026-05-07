@@ -49,6 +49,8 @@ spec:
       - GITHUB_TOKEN
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
+      - ZILLIZ_SERVERLESS_TOKEN
+      - ZILLIZ_TOWN_TOKEN
     injectKeys:
       - NEXUS_AGENT_ID
       - NEXUS_TASK_ACTION

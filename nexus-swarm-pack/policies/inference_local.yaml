@@ -55,6 +55,8 @@ spec:
       - OPENAI_API_KEY
       - ANTHROPIC_API_KEY
       - HUGGINGFACE_TOKEN
+      - ZILLIZ_SERVERLESS_TOKEN
+      - ZILLIZ_TOWN_TOKEN
     injectKeys:
       - NEXUS_AGENT_ID
       - NEXUS_TASK_ACTION

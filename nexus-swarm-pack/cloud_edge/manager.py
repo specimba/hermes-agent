@@ -63,17 +63,17 @@ class SupabaseConfig:
 def get_cloud_config() -> Dict[str, Any]:
     """Load cloud configuration from environment or config file."""
     return {
-        "zilliz_hot": ZillizConfig(
-            uri=os.getenv("ZILLIZ_HOT_URI", "https://in05-2a4b7e6226ae27e.serverless.aws-eu-central-1.cloud.zilliz.com"),
-            token=os.getenv("ZILLIZ_HOT_TOKEN", ""),
+        "zilliz_serverless": ZillizConfig(
+            uri=os.getenv("ZILLIZ_SERVERLESS_URI", "https://in05-2a4b7e6226ae27e.serverless.aws-eu-central-1.cloud.zilliz.com"),
+            token=os.getenv("ZILLIZ_SERVERLESS_TOKEN", ""),
             cluster_name="nexus-serverless",
-            purpose="hot"
+            purpose="serverless"
         ),
-        "zilliz_cold": ZillizConfig(
-            uri=os.getenv("ZILLIZ_COLD_URI", "https://in03-db7a5bcd01da539.serverless.aws-eu-central-1.cloud.zilliz.com"),
-            token=os.getenv("ZILLIZ_COLD_TOKEN", ""),
+        "zilliz_town": ZillizConfig(
+            uri=os.getenv("ZILLIZ_TOWN_URI", "https://in03-db7a5bcd01da539.serverless.aws-eu-central-1.cloud.zilliz.com"),
+            token=os.getenv("ZILLIZ_TOWN_TOKEN", ""),
             cluster_name="nexus-os-town",
-            purpose="cold"
+            purpose="town"
         ),
         "supabase": SupabaseConfig(
             url=os.getenv("SUPABASE_URL", ""),
@@ -286,8 +286,8 @@ class CloudEdgeManager:
     def __init__(self):
         self.config = get_cloud_config()
         self.zilliz = ZillizDualCluster(
-            self.config["zilliz_hot"],
-            self.config["zilliz_cold"]
+            self.config["zilliz_serverless"],
+            self.config["zilliz_town"]
         )
         self.supabase = SupabaseMirror(self.config["supabase"])
         self.ready = False
