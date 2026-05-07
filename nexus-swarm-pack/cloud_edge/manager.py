@@ -341,8 +341,8 @@ if __name__ == "__main__":
     
     if manager.initialize():
         print("\n✅ Cloud Edge Ready!")
-        print(f"   - Zilliz HOT: {manager.config['zilliz_hot'].cluster_name}")
-        print(f"   - Zilliz COLD: {manager.config['zilliz_cold'].cluster_name}")
+        print(f"   - Zilliz SERVERLESS: {manager.config['zilliz_serverless'].cluster_name}")
+        print(f"   - Zilliz TOWN: {manager.config['zilliz_town'].cluster_name}")
         print(f"   - Supabase: {manager.config['supabase'].project_name}")
     else:
         print("\n⚠️  Cloud Edge not fully ready (check credentials)")
