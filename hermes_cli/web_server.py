@@ -52,7 +52,7 @@ from gateway.status import get_running_pid, read_runtime_status
 try:
     from fastapi import FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+    from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
     from fastapi.staticfiles import StaticFiles
     from pydantic import BaseModel
 except ImportError:
@@ -179,7 +179,7 @@ def _is_accepted_host(host_header: str, bound_host: str) -> bool:
     # 0.0.0.0 bind means operator explicitly opted into all-interfaces
     # (requires --insecure per web_server.start_server). No Host-layer
     # defence can protect that mode; rely on operator network controls.
-    if bound_host in ("0.0.0.0", "::"):
+    if bound_host in {"0.0.0.0", "::"}:
         return True
 
     # Loopback bind: accept the loopback names
@@ -225,7 +225,7 @@ async def host_header_middleware(request: Request, call_next):
 async def auth_middleware(request: Request, call_next):
     """Require the session token on all /api/ routes except the public list."""
     path = request.url.path
-    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS and not path.startswith("/api/plugins/"):
+    if path.startswith("/api/") and path not in _PUBLIC_API_PATHS:
         if not _has_valid_session_token(request):
             return JSONResponse(
                 status_code=401,
@@ -385,7 +385,7 @@ def _build_schema_from_config(
         full_key = f"{prefix}.{key}" if prefix else key
 
         # Skip internal / version keys
-        if full_key in ("_config_version",):
+        if full_key in {"_config_version",}:
             continue
 
         # Category is the first path component for nested keys, or "general"
@@ -533,7 +533,7 @@ async def get_status():
     remote_health_body: dict | None = None
 
     if not gateway_running and _GATEWAY_HEALTH_URL:
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         alive, remote_health_body = await loop.run_in_executor(
             None, _probe_gateway_health
         )
@@ -576,13 +576,13 @@ async def get_status():
         gateway_exit_reason = runtime.get("exit_reason")
         gateway_updated_at = runtime.get("updated_at")
         if not gateway_running:
-            gateway_state = gateway_state if gateway_state in ("stopped", "startup_failed") else "stopped"
+            gateway_state = gateway_state if gateway_state in {"stopped", "startup_failed"} else "stopped"
             gateway_platforms = {}
         elif gateway_running and remote_health_body is not None:
             # The health probe confirmed the gateway is alive, but the local
             # runtime status file may be stale (cross-container).  Override
             # stopped/None state so the dashboard shows the correct badge.
-            if gateway_state in (None, "stopped"):
+            if gateway_state in {None, "stopped"}:
                 gateway_state = "running"
 
     # If there was no runtime info at all but the health probe confirmed alive,
@@ -692,7 +692,7 @@ def _tail_lines(path: Path, n: int) -> List[str]:
     if not path.exists():
         return []
     try:
-        text = path.read_text(errors="replace")
+        text = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
         return []
     lines = text.splitlines()
@@ -1075,7 +1075,7 @@ async def set_model_assignment(body: ModelAssignment):
     model = (body.model or "").strip()
     task = (body.task or "").strip().lower()
 
-    if scope not in ("main", "auxiliary"):
+    if scope not in {"main", "auxiliary"}:
         raise HTTPException(status_code=400, detail="scope must be 'main' or 'auxiliary'")
 
     try:
@@ -1190,14 +1190,13 @@ def _denormalize_config_from_web(config: Dict[str, Any]) -> Dict[str, Any]:
                 else:
                     disk_model.pop("context_length", None)
                 config["model"] = disk_model
-            else:
-                # Model was previously a bare string — upgrade to dict if
-                # user is setting a context_length override
-                if ctx_override > 0:
-                    config["model"] = {
-                        "default": model_val,
-                        "context_length": ctx_override,
-                    }
+            # Model was previously a bare string — upgrade to dict if
+            # user is setting a context_length override
+            elif ctx_override > 0:
+                config["model"] = {
+                    "default": model_val,
+                    "context_length": ctx_override,
+                }
         except Exception:
             pass  # can't read disk config — just use the string form
     return config
@@ -1569,7 +1568,7 @@ async def disconnect_oauth_provider(provider_id: str, request: Request):
     # AND forget the Claude Code import. We don't touch ~/.claude/* directly
     # — that's owned by the Claude Code CLI; users can re-auth there if they
     # want to undo a disconnect.
-    if provider_id in ("anthropic", "claude-code"):
+    if provider_id in {"anthropic", "claude-code"}:
         try:
             from agent.anthropic_adapter import _HERMES_OAUTH_FILE
             if _HERMES_OAUTH_FILE.exists():
@@ -1845,7 +1844,7 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
                     client_id=client_id,
                     scope=scope,
                 )
-        device_data = await asyncio.get_event_loop().run_in_executor(None, _do_nous_device_request)
+        device_data = await asyncio.get_running_loop().run_in_executor(None, _do_nous_device_request)
         sid, sess = _new_oauth_session("nous", "device_code")
         sess["device_code"] = str(device_data["device_code"])
         sess["interval"] = int(device_data["interval"])
@@ -1877,8 +1876,8 @@ async def _start_device_code_flow(provider_id: str) -> Dict[str, Any]:
             name=f"oauth-codex-{sid[:6]}",
         ).start()
         # Block briefly until the worker has populated the user_code, OR error.
-        deadline = time.time() + 10
-        while time.time() < deadline:
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
             with _oauth_sessions_lock:
                 s = _oauth_sessions.get(sid)
             if s and (s.get("user_code") or s["status"] != "pending"):
@@ -2012,10 +2011,10 @@ def _codex_full_login_worker(session_id: str) -> None:
             sess["expires_at"] = time.time() + sess["expires_in"]
 
         # Step 2: poll until authorized
-        deadline = time.time() + sess["expires_in"]
+        deadline = time.monotonic() + sess["expires_in"]
         code_resp = None
         with httpx.Client(timeout=httpx.Timeout(15.0)) as client:
-            while time.time() < deadline:
+            while time.monotonic() < deadline:
                 time.sleep(poll_interval)
                 poll = client.post(
                     f"{issuer}/api/accounts/deviceauth/token",
@@ -2025,7 +2024,7 @@ def _codex_full_login_worker(session_id: str) -> None:
                 if poll.status_code == 200:
                     code_resp = poll.json()
                     break
-                if poll.status_code in (403, 404):
+                if poll.status_code in {403, 404}:
                     continue  # user hasn't authorized yet
                 raise RuntimeError(f"deviceauth/token poll returned {poll.status_code}")
 
@@ -2134,7 +2133,7 @@ async def submit_oauth_code(provider_id: str, body: OAuthSubmitBody, request: Re
     """Submit the auth code for PKCE flows. Token-protected."""
     _require_token(request)
     if provider_id == "anthropic":
-        return await asyncio.get_event_loop().run_in_executor(
+        return await asyncio.get_running_loop().run_in_executor(
             None, _submit_anthropic_pkce, body.session_id, body.code,
         )
     raise HTTPException(status_code=400, detail=f"submit not supported for {provider_id}")
@@ -2173,6 +2172,83 @@ async def cancel_oauth_session(session_id: str, request: Request):
 # ---------------------------------------------------------------------------
 
 
+
+def _session_latest_descendant(session_id: str):
+    """Resolve a session id to the newest child leaf session.
+
+    /model may create child sessions. Dashboard refresh should continue the
+    newest child instead of reopening the old parent.
+    """
+    from hermes_state import SessionDB
+
+    def row_get(row, key, index):
+        if isinstance(row, dict):
+            return row.get(key)
+        try:
+            return row[key]
+        except Exception:
+            try:
+                return row[index]
+            except Exception:
+                return None
+
+    db = SessionDB()
+    try:
+        sid = db.resolve_session_id(session_id)
+        if not sid or not db.get_session(sid):
+            return None, []
+
+        conn = (
+            getattr(db, "conn", None)
+            or getattr(db, "_conn", None)
+            or getattr(db, "connection", None)
+            or getattr(db, "_connection", None)
+        )
+
+        rows = []
+        if conn is not None:
+            raw_rows = conn.execute(
+                "SELECT id, parent_session_id, started_at FROM sessions"
+            ).fetchall()
+            for row in raw_rows:
+                rows.append({
+                    "id": row_get(row, "id", 0),
+                    "parent_session_id": row_get(row, "parent_session_id", 1),
+                    "started_at": row_get(row, "started_at", 2),
+                })
+        else:
+            rows = db.list_sessions_rich(limit=10000, offset=0)
+
+        children = {}
+        for row in rows:
+            rid = row.get("id")
+            parent = row.get("parent_session_id")
+            if rid and parent:
+                children.setdefault(parent, []).append(row)
+
+        def started(row):
+            try:
+                return float(row.get("started_at") or 0)
+            except Exception:
+                return 0.0
+
+        current = sid
+        path = [sid]
+        seen = {sid}
+
+        while children.get(current):
+            candidates = [r for r in children[current] if r.get("id") not in seen]
+            if not candidates:
+                break
+            candidates.sort(key=started, reverse=True)
+            current = candidates[0]["id"]
+            path.append(current)
+            seen.add(current)
+
+        return current, path
+    finally:
+        db.close()
+
 @app.get("/api/sessions/{session_id}")
 async def get_session_detail(session_id: str):
     from hermes_state import SessionDB
@@ -2186,6 +2262,19 @@ async def get_session_detail(session_id: str):
     finally:
         db.close()
 
+
+
+@app.get("/api/sessions/{session_id}/latest-descendant")
+async def get_session_latest_descendant(session_id: str):
+    latest, path = _session_latest_descendant(session_id)
+    if not latest:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {
+        "requested_session_id": path[0] if path else session_id,
+        "session_id": latest,
+        "path": path,
+        "changed": bool(path and latest != path[0]),
+    }
 
 @app.get("/api/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str):
@@ -2366,6 +2455,7 @@ async def delete_cron_job(job_id: str):
 class ProfileCreate(BaseModel):
     name: str
     clone_from_default: bool = False
+    no_skills: bool = False
 
 
 class ProfileRename(BaseModel):
@@ -2471,11 +2561,13 @@ async def create_profile_endpoint(body: ProfileCreate):
             name=body.name,
             clone_from="default" if body.clone_from_default else None,
             clone_config=body.clone_from_default,
+            no_skills=body.no_skills,
         )
         # Match the CLI's profile-create flow: fresh named profiles get the
         # bundled skills installed. When cloning from default, create_profile()
         # has already copied the source profile's skills, including any
-        # user-installed skills.
+        # user-installed skills. When no_skills=True, create_profile() wrote
+        # the opt-out marker and seed_profile_skills() will no-op.
         if not body.clone_from_default:
             profiles_mod.seed_profile_skills(path, quiet=True)
 
@@ -2886,7 +2978,20 @@ async def get_models_analytics(days: int = 30):
 import re
 import asyncio
 
-from hermes_cli.pty_bridge import PtyBridge, PtyUnavailableError
+# PTY bridge is POSIX-only (depends on fcntl/termios/ptyprocess).  On native
+# Windows the import raises; catch and leave PtyBridge=None so the rest of
+# the dashboard (sessions, jobs, metrics, config editor) still loads and the
+# /api/pty endpoint cleanly refuses with a WSL-suggested message.
+try:
+    from hermes_cli.pty_bridge import PtyBridge, PtyUnavailableError
+    _PTY_BRIDGE_AVAILABLE = True
+except ImportError as _pty_import_err:  # pragma: no cover - Windows-only path
+    PtyBridge = None  # type: ignore[assignment]
+    _PTY_BRIDGE_AVAILABLE = False
+
+    class PtyUnavailableError(RuntimeError):  # type: ignore[no-redef]
+        """Stub on platforms where pty_bridge can't be imported."""
+        pass
 
 _RESIZE_RE = re.compile(rb"\x1b\[RESIZE:(\d+);(\d+)\]")
 _PTY_READ_CHUNK_TIMEOUT = 0.2
@@ -2898,7 +3003,7 @@ _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost", "testclient"})
 
 def _is_public_bind() -> bool:
     """True when bound to all-interfaces (operator used --insecure)."""
-    return getattr(app.state, "bound_host", "") in ("0.0.0.0", "::")
+    return getattr(app.state, "bound_host", "") in {"0.0.0.0", "::"}
 
 
 def _ws_client_is_allowed(ws: "WebSocket") -> bool:
@@ -2946,8 +3051,18 @@ def _resolve_chat_argv(
     argv, cwd = _make_tui_argv(PROJECT_ROOT / "ui-tui", tui_dev=False)
     env = os.environ.copy()
     env.setdefault("NODE_ENV", "production")
+    # Browser-embedded chat should prefer stable wheel-based scrollback over
+    # native terminal mouse tracking. When mouse tracking is enabled, wheel
+    # events are consumed by the TUI and forwarded as terminal input, which
+    # makes browser-side transcript scrolling feel broken. Keep the terminal
+    # build unchanged for native CLI usage; only disable mouse tracking for
+    # the dashboard PTY path.
+    env.setdefault("HERMES_TUI_DISABLE_MOUSE", "1")
 
     if resume:
+        latest_resume, _latest_path = _session_latest_descendant(resume)
+        if latest_resume:
+            resume = latest_resume
         env["HERMES_TUI_RESUME"] = resume
 
     if sidecar_url:
@@ -3009,6 +3124,18 @@ async def pty_ws(ws: WebSocket) -> None:
         return
 
     await ws.accept()
+
+    # On native Windows, the POSIX PTY bridge can't be imported.  Tell the
+    # client and close cleanly rather than pretending the feature works.
+    if not _PTY_BRIDGE_AVAILABLE:
+        await ws.send_text(
+            "\r\n\x1b[31mChat unavailable: the embedded terminal requires a "
+            "POSIX PTY, which native Windows Python doesn't provide.\x1b[0m\r\n"
+            "\x1b[33mInstall Hermes inside WSL2 to use the dashboard's /chat "
+            "tab — the rest of the dashboard works here.\x1b[0m\r\n"
+        )
+        await ws.close(code=1011)
+        return
 
     # --- spawn PTY ------------------------------------------------------
     resume = ws.query_params.get("resume") or None
@@ -3205,12 +3332,42 @@ async def events_ws(ws: WebSocket) -> None:
                     _event_channels.pop(channel, None)
 
 
+def _normalise_prefix(raw: Optional[str]) -> str:
+    """Normalise an X-Forwarded-Prefix header value.
+
+    Returns a string like ``"/hermes"`` (no trailing slash) or ``""`` when
+    no prefix is set / the header is malformed. We deliberately reject
+    anything containing ``..`` or non-printable bytes so a hostile proxy
+    can't inject HTML via the prefix.
+    """
+    if not raw:
+        return ""
+    p = raw.strip()
+    if not p:
+        return ""
+    if not p.startswith("/"):
+        p = "/" + p
+    p = p.rstrip("/")
+    if "//" in p or ".." in p or any(c in p for c in ('"', "'", "<", ">", " ", "\n", "\r", "\t")):
+        return ""
+    if len(p) > 64:
+        return ""
+    return p
+
+
 def mount_spa(application: FastAPI):
     """Mount the built SPA. Falls back to index.html for client-side routing.
 
     The session token is injected into index.html via a ``<script>`` tag so
     the SPA can authenticate against protected API endpoints without a
     separate (unauthenticated) token-dispensing endpoint.
+
+    When served behind a path-prefix reverse proxy (e.g.
+    ``mission-control.tilos.com/hermes/*`` -> local Caddy -> :9119), the
+    proxy injects ``X-Forwarded-Prefix: /hermes`` on every request. We
+    rewrite the served ``index.html`` so absolute asset URLs (``/assets/...``)
+    and the SPA's runtime ``__HERMES_BASE_PATH__`` honour that prefix
+    without rebuilding the bundle.
     """
     if not WEB_DIST.exists():
         @application.get("/{full_path:path}")
@@ -3223,24 +3380,62 @@ def mount_spa(application: FastAPI):
 
     _index_path = WEB_DIST / "index.html"
 
-    def _serve_index():
-        """Return index.html with the session token injected."""
+    def _serve_index(prefix: str = ""):
+        """Return index.html with the session token + base-path injected.
+
+        ``prefix`` is the normalised ``X-Forwarded-Prefix`` (e.g. ``/hermes``)
+        or empty string when served at root.
+        """
         html = _index_path.read_text()
         chat_js = "true" if _DASHBOARD_EMBEDDED_CHAT_ENABLED else "false"
         token_script = (
             f'<script>window.__HERMES_SESSION_TOKEN__="{_SESSION_TOKEN}";'
-            f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};</script>"
+            f"window.__HERMES_DASHBOARD_EMBEDDED_CHAT__={chat_js};"
+            f'window.__HERMES_BASE_PATH__="{prefix}";</script>'
         )
+        if prefix:
+            # Rewrite absolute asset URLs baked into the Vite build so the
+            # browser fetches them through the same proxy prefix.
+            html = html.replace('href="/assets/', f'href="{prefix}/assets/')
+            html = html.replace('src="/assets/', f'src="{prefix}/assets/')
+            html = html.replace('href="/favicon.ico"', f'href="{prefix}/favicon.ico"')
+            html = html.replace('href="/fonts/', f'href="{prefix}/fonts/')
+            html = html.replace('href="/ds-assets/', f'href="{prefix}/ds-assets/')
+            html = html.replace('src="/ds-assets/', f'src="{prefix}/ds-assets/')
         html = html.replace("</head>", f"{token_script}</head>", 1)
         return HTMLResponse(
             html,
             headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
         )
 
+    # When served behind a path-prefix proxy, the built CSS contains
+    # absolute ``url(/fonts/...)`` and ``url(/ds-assets/...)`` references.
+    # Browsers resolve those against the document origin, which means
+    # under ``/hermes`` they'd hit ``mission-control.tilos.com/fonts/...``
+    # (the MC Pages app), not the Hermes backend. Intercept CSS asset
+    # requests BEFORE the StaticFiles mount and rewrite the absolute paths
+    # when a prefix is in play.
+    @application.get("/assets/{filename}.css")
+    async def serve_css(filename: str, request: Request):
+        css_path = WEB_DIST / "assets" / f"{filename}.css"
+        if not css_path.is_file() or not css_path.resolve().is_relative_to(
+            WEB_DIST.resolve()
+        ):
+            return JSONResponse({"error": "not found"}, status_code=404)
+        prefix = _normalise_prefix(request.headers.get("x-forwarded-prefix"))
+        css = css_path.read_text()
+        if prefix:
+            for asset_dir in ("/fonts/", "/fonts-terminal/", "/ds-assets/", "/assets/"):
+                css = css.replace(f"url({asset_dir}", f"url({prefix}{asset_dir}")
+                css = css.replace(f"url(\"{asset_dir}", f"url(\"{prefix}{asset_dir}")
+                css = css.replace(f"url('{asset_dir}", f"url('{prefix}{asset_dir}")
+        return Response(content=css, media_type="text/css")
+
     application.mount("/assets", StaticFiles(directory=WEB_DIST / "assets"), name="assets")
 
     @application.get("/{full_path:path}")
-    async def serve_spa(full_path: str):
+    async def serve_spa(full_path: str, request: Request):
+        prefix = _normalise_prefix(request.headers.get("x-forwarded-prefix"))
         file_path = WEB_DIST / full_path
         # Prevent path traversal via url-encoded sequences (%2e%2e/)
         if (
@@ -3250,7 +3445,7 @@ def mount_spa(application: FastAPI):
             and file_path.is_file()
         ):
             return FileResponse(file_path)
-        return _serve_index()
+        return _serve_index(prefix)
 
 
 # ---------------------------------------------------------------------------
@@ -3390,7 +3585,7 @@ def _normalise_theme_definition(data: Dict[str, Any]) -> Optional[Dict[str, Any]
     if isinstance(radius, str) and radius.strip():
         layout["radius"] = radius
     density = layout_src.get("density")
-    if isinstance(density, str) and density in ("compact", "comfortable", "spacious"):
+    if isinstance(density, str) and density in {"compact", "comfortable", "spacious"}:
         layout["density"] = density
 
     # Color overrides — keep only valid keys with string values.
@@ -3723,7 +3918,7 @@ def _merged_plugins_hub() -> Dict[str, Any]:
             pass
 
         can_remove_update = (
-            source in ("user", "git") and under_user_tree and Path(dir_str).is_dir()
+            source in {"user", "git"} and under_user_tree and Path(dir_str).is_dir()
         )
 
         # Check if this plugin provides tools that require auth
