@@ -557,6 +557,8 @@ def _robust_move_or_delete(
     """
     import shutil as _shutil
 
+    if retries < 1:
+        retries = 1
     for attempt in range(retries):
         try:
             if target is not None:
