@@ -2173,6 +2173,9 @@ def test_resolve_hermes_argv_prefers_path_shim(monkeypatch):
 
     monkeypatch.delenv("HERMES_BIN", raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: "/usr/local/bin/hermes")
+    # On Windows the code calls _safe_which_no_cwd instead of shutil.which;
+    # patch both so the test exercises the shim-preference logic on all platforms.
+    monkeypatch.setattr(kb, "_safe_which_no_cwd", lambda name: "/usr/local/bin/hermes")
     argv = kb._resolve_hermes_argv()
     assert argv == ["/usr/local/bin/hermes"]
 
@@ -2223,10 +2226,17 @@ def test_resolve_hermes_argv_hermes_bin_bare_name_uses_path(monkeypatch, tmp_pat
     import stat
     import hermes_cli.kanban_db as kb
 
-    cwd_hermes = tmp_path / "hermes"
+    # On Windows _safe_which_no_cwd appends PATHEXT extensions, so use a
+    # .exe name and clear PATHEXT to a single extension for determinism.
+    if kb._IS_WINDOWS:
+        monkeypatch.setenv("PATHEXT", ".exe")
+        exe_name = "hermes.exe"
+    else:
+        exe_name = "hermes"
+    cwd_hermes = tmp_path / exe_name
     cwd_hermes.write_text("wrong\n", encoding="utf-8")
     cwd_hermes.chmod(cwd_hermes.stat().st_mode | stat.S_IXUSR)
-    path_hermes = tmp_path / "bin" / "hermes"
+    path_hermes = tmp_path / "bin" / exe_name
     path_hermes.parent.mkdir()
     path_hermes.write_text("right\n", encoding="utf-8")
     path_hermes.chmod(path_hermes.stat().st_mode | stat.S_IXUSR)
@@ -2292,6 +2302,8 @@ def test_resolve_hermes_argv_falls_back_to_module_form_when_no_path_shim(monkeyp
 
     monkeypatch.delenv("HERMES_BIN", raising=False)
     monkeypatch.setattr(shutil, "which", lambda name: None)
+    # On Windows the code calls _safe_which_no_cwd instead of shutil.which.
+    monkeypatch.setattr(kb, "_safe_which_no_cwd", lambda name: None)
     argv = kb._resolve_hermes_argv()
     assert argv == [sys.executable, "-m", "hermes_cli.main"]
 

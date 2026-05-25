@@ -546,6 +546,30 @@ def list_boards(*, include_archived: bool = True) -> list[dict]:
     return entries
 
 
+def _robust_move_or_delete(
+    source: Path, target: Optional[Path], *, retries: int = 5, delay: float = 0.1
+) -> None:
+    """Move *source* to *target* (or delete when *target* is ``None``).
+
+    On Windows, recently-closed SQLite connections may hold brief file
+    locks (WAL checkpointing, anti-virus scanners, etc.). Retry with a
+    short back-off so callers don't have to sprinkle platform checks.
+    """
+    import shutil as _shutil
+
+    for attempt in range(retries):
+        try:
+            if target is not None:
+                source.rename(target)
+            else:
+                _shutil.rmtree(source)
+            return
+        except PermissionError:
+            if attempt == retries - 1:
+                raise
+            time.sleep(delay * (attempt + 1))
+
+
 def remove_board(slug: str, *, archive: bool = True) -> dict:
     """Remove or archive a board.
 
@@ -585,11 +609,10 @@ def remove_board(slug: str, *, archive: bool = True) -> dict:
         while target.exists():
             target = archive_root / f"{normed}-{ts}-{suffix}"
             suffix += 1
-        d.rename(target)
+        _robust_move_or_delete(d, target)
         return {"slug": normed, "action": "archived", "new_path": str(target)}
     else:
-        import shutil
-        shutil.rmtree(d)
+        _robust_move_or_delete(d, None)
         return {"slug": normed, "action": "deleted", "new_path": ""}
 
 
@@ -3771,6 +3794,12 @@ def _classify_worker_exit(pid: int) -> "tuple[str, Optional[int]]":
         return ("unknown", None)
     raw, _ = entry
     try:
+        if _IS_WINDOWS:
+            # On Windows the raw status is the process exit code directly
+            # (no POSIX wait-status encoding). Signals are not applicable.
+            if raw == 0:
+                return ("clean_exit", 0)
+            return ("nonzero_exit", raw)
         if os.WIFEXITED(raw):
             code = os.WEXITSTATUS(raw)
             if code == 0:
