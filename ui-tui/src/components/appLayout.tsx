@@ -112,9 +112,9 @@ const TranscriptPane = memo(function TranscriptPane({
 
               {row.msg.kind === 'intro' ? (
                 <Box flexDirection="column" paddingTop={1}>
-                  <Banner t={ui.theme} />
+                  <Banner maxWidth={Math.max(1, composer.cols - 2)} t={ui.theme} />
 
-                  {row.msg.info && <SessionPanel info={row.msg.info} sid={ui.sid} t={ui.theme} />}
+                  {row.msg.info && <SessionPanel info={row.msg.info} maxWidth={Math.max(1, composer.cols - 2)} sid={ui.sid} t={ui.theme} />}
                 </Box>
               ) : row.msg.kind === 'panel' && row.msg.panelData ? (
                 <Panel sections={row.msg.panelData.sections} t={ui.theme} title={row.msg.panelData.title} />
@@ -252,8 +252,12 @@ const ComposerPane = memo(function ComposerPane({
           cols={composer.cols}
           compIdx={composer.compIdx}
           completions={composer.completions}
+          onActiveSessionClose={actions.closeLiveSession}
+          onActiveSessionSelect={actions.activateLiveSession}
           onModelSelect={actions.onModelSelect}
-          onPickerSelect={actions.resumeById}
+          onNewLiveSession={actions.newLiveSession}
+          onNewPromptSession={actions.newPromptSession}
+          onResumeSelect={actions.resumeById}
           pagerPageSize={composer.pagerPageSize}
         />
 
@@ -354,9 +358,12 @@ const StatusRulePane = memo(function StatusRulePane({
         busy={ui.busy}
         cols={composer.cols}
         cwdLabel={status.cwdLabel}
+        indicatorStyle={ui.indicatorStyle}
+        liveSessionCount={ui.liveSessionCount}
         model={ui.info?.model ?? ''}
         modelFast={ui.info?.fast || ui.info?.service_tier === 'priority'}
         modelReasoningEffort={ui.info?.reasoning_effort}
+        onSessionCountClick={() => patchOverlayState({ sessions: true })}
         sessionStartedAt={status.sessionStartedAt}
         showCost={ui.showCost}
         status={ui.status}
