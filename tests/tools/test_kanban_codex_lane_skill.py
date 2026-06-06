@@ -1,6 +1,7 @@
 """Regression coverage for the bundled Kanban Codex lane skill."""
 
 import json
+import os
 from pathlib import Path
 
 from tools import skills_tool
@@ -42,8 +43,10 @@ def test_kanban_codex_lane_skill_is_discoverable_with_template(monkeypatch, tmp_
 
     viewed = json.loads(skills_tool.skill_view("kanban-codex-lane"))
     assert viewed["success"] is True
-    assert viewed["path"].endswith("kanban-codex-lane/SKILL.md")
-    assert viewed["linked_files"]["templates"] == ["templates/pmb-codex-lane-prompt.md"]
+    assert Path(viewed["path"]).parts[-2:] == ("kanban-codex-lane", "SKILL.md")
+    assert [p.replace(os.sep, "/") for p in viewed["linked_files"]["templates"]] == [
+        "templates/pmb-codex-lane-prompt.md"
+    ]
 
     template = json.loads(
         skills_tool.skill_view(
